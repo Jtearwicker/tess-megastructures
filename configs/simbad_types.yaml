@@ -1,0 +1,72 @@
+# =============================================================================
+# SIMBAD object type filtering (Subsystem B4)
+# =============================================================================
+# Maps SIMBAD object-type codes to filter categories. SIMBAD types are
+# documented at: https://simbad.u-strasbg.fr/guide/otypes.htx
+#
+# A TIC's SimbadOtypes string can contain multiple codes separated by
+# spaces or commas. We flag the TIC if ANY of its types matches a code
+# in any of the categories below where the category is enabled.
+# =============================================================================
+
+# Category: known eclipsing binaries
+# Sets `simbad_is_eb = True` on TCEs whose TIC has any of these types.
+eclipsing_binary:
+  enabled: true
+  codes:
+    - "EB*"      # Eclipsing binary
+    - "EB"       # Eclipsing binary (alternate)
+    - "Al*"      # Algol-type EB
+    - "bL*"      # Beta Lyr-type EB
+    - "WU*"      # W UMa-type contact EB
+
+# Category: pulsating variables
+# These have well-understood pulsation mechanisms and are not
+# megastructure-relevant.
+pulsating_variable:
+  enabled: true
+  codes:
+    - "bC*"      # beta Cep
+    - "SX*"      # SX Phe
+    - "gD*"      # gamma Dor
+    - "dS*"      # delta Sct
+    - "RR*"      # RR Lyr
+    - "WV*"      # W Vir
+    - "Ce*"      # Cepheid
+    - "cC*"      # classical Cepheid
+    - "Pu*"      # Pulsating variable (general)
+
+# Category: rotational and eruptive variables
+# Spot-induced or chromospherically-induced variability.
+rotational_eruptive:
+  enabled: true
+  codes:
+    - "Ro*"      # Rotating variable
+    - "Er*"      # Eruptive variable
+    - "RS*"      # RS CVn
+    - "BY*"      # BY Dra
+    - "El*"      # Ellipsoidal variable
+
+# Category: generic variable star
+# Catch-all for SIMBAD's generic V* designation. Use cautiously: many
+# weird-but-unexplained objects get a generic V* assignment, which is
+# precisely what we may want to look at. v1 includes this for caution;
+# revisit during vetting if too many interesting candidates are excluded.
+generic_variable:
+  enabled: true
+  codes:
+    - "V*"       # Variable star (generic)
+
+# Category: young stellar objects with disks
+# Often the source of dipper-like variability. v1 excludes these to
+# avoid contamination from known YSOs; v3 (aperiodic search) may
+# specifically *include* these.
+yso:
+  enabled: true
+  codes:
+    - "Y*?"      # YSO candidate
+    - "Y*O"      # YSO
+    - "TT*"      # T Tauri star
+    - "Or*"      # Orion variable
+    - "Ae*"      # Herbig Ae/Be star
+    - "Ae?"      # Herbig Ae/Be candidate

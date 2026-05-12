@@ -1,0 +1,19 @@
+# Local Snakemake profile for development on a workstation/laptop.
+#
+# Usage:
+#   snakemake --profile workflow/profiles/local <target>
+
+# Cap concurrency to be polite on a shared machine.
+cores: 4
+jobs: 4
+
+# Give each rule a default of half-an-hour and 4 GB unless it specifies more.
+default-resources:
+  - mem_mb=4000
+  - runtime=30
+
+# Show useful run info.
+printshellcmds: true
+reason: true
+keep-going: false
+rerun-incomplete: true

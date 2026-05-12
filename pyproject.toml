@@ -1,0 +1,127 @@
+[project]
+name = "tess-megastructures"
+version = "0.1.0dev"
+description = "TESS-SPOC pipeline for identifying anomalous transit signals and setting upper limits on megastructures."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    # Add yourself here.
+    # { name = "Your Name", email = "you@institution.edu" },
+]
+keywords = ["TESS", "exoplanets", "SETI", "technosignatures", "data-validation"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+
+# Core runtime dependencies.
+# Pin only when something downstream breaks; otherwise use lower bounds.
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pyarrow>=15.0",          # Parquet I/O
+    "pyyaml>=6.0",
+    "requests>=2.31",
+    "tqdm>=4.66",
+    "astropy>=6.0",
+    "astroquery>=0.4.7",      # SIMBAD, NASA Exoplanet Archive
+    "lxml>=5.1",              # Faster, namespace-aware XML
+]
+
+[project.optional-dependencies]
+# Vetting app dependencies, kept separate so the core library has fewer deps.
+vet = [
+    "streamlit>=1.31",
+    "matplotlib>=3.8",
+    "lightkurve>=2.4",        # FFI light curve handling for vetting plots
+]
+
+# Pipeline orchestration. Snakemake is heavy; only install where needed.
+workflow = [
+    "snakemake>=8.4",
+    "snakemake-executor-plugin-slurm>=0.4",  # Optional, for cluster runs
+]
+
+# Development tooling.
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.3",              # Linter + formatter (replaces black + flake8)
+    "mypy>=1.9",              # Optional type-checking
+    "ipython>=8.20",
+    "jupyter>=1.0",
+]
+
+# Convenience meta-extra for full development install.
+all = [
+    "tess-megastructures[vet,workflow,dev]",
+]
+
+[project.urls]
+# Repository = "https://github.com/<your-username>/tess-megastructures"
+# Issues = "https://github.com/<your-username>/tess-megastructures/issues"
+
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tess_megastructures"]
+
+# ---------------------------------------------------------------------------
+# Tool configurations
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Reasonable default rule set. Add or remove as preferences emerge.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import ordering)
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "N",    # pep8-naming
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",  # Line too long; ruff format handles this
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use assert and weird names freely.
+"tests/**/*.py" = ["S101", "N802", "N803"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-ra",                # Show extra summary for non-pass results
+    "--strict-markers",   # Fail on undefined markers
+    "--cov=tess_megastructures",
+    "--cov-report=term-missing",
+]
+markers = [
+    "slow: tests that take >1s",
+    "network: tests that hit the internet (skipped in CI by default)",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+# Start lenient; tighten as the codebase matures.
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true

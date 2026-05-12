@@ -1,0 +1,44 @@
+# =============================================================================
+# Per-machine path configuration
+# =============================================================================
+# Copy this file to `paths.yaml` (gitignored) and edit for your machine.
+#
+#   cp configs/paths.example.yaml configs/paths.yaml
+#
+# All paths are absolute. Paths can be on the cluster filesystem, local
+# scratch, or a mix. The pipeline will create directories that don't exist.
+# =============================================================================
+
+# Root directory for raw data (XML files, FFI light curves).
+# This can be very large (~1-2 TB). Place it on bulk storage.
+raw_data_dir: "/path/to/scratch/tess-megastructures/raw"
+
+# Subdirectories under raw_data_dir.
+xml_dir: "/path/to/scratch/tess-megastructures/raw/xml"
+ffi_lc_dir: "/path/to/scratch/tess-megastructures/raw/ffi_lc"
+
+# Processed data (parquet files). Smaller, ~10-100 GB total.
+# Place on faster storage if available.
+processed_data_dir: "/path/to/scratch/tess-megastructures/processed"
+
+# Literature catalogs (Prsa, Kostov, etc.). Small (~MB).
+literature_dir: "/path/to/scratch/tess-megastructures/literature"
+
+# SIMBAD query cache. Persists across runs. Small.
+simbad_cache_dir: "/path/to/scratch/tess-megastructures/simbad_cache"
+
+# Final outputs: candidate tables, vetting log, paper figures.
+# These should be backed up regularly.
+output_dir: "/path/to/home/tess-megastructures/outputs"
+
+# State manifest (SQLite database).
+manifest_path: "/path/to/scratch/tess-megastructures/state/manifest.sqlite"
+
+# Vetting log (SQLite database). BACK THIS UP — losing it costs months of work.
+vetting_log_path: "/path/to/home/tess-megastructures/outputs/vetting_log.sqlite"
+
+# Vetting packages (one directory per candidate).
+vetting_packages_dir: "/path/to/scratch/tess-megastructures/vetting_packages"
+
+# Logging.
+log_dir: "/path/to/home/tess-megastructures/logs"

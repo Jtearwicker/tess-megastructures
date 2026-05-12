@@ -1,0 +1,31 @@
+# Cluster Snakemake profile for SLURM submission.
+#
+# Usage:
+#   snakemake --profile workflow/profiles/cluster <target>
+#
+# Adjust partition, account, and resource defaults to match your cluster.
+# Requires `snakemake-executor-plugin-slurm` (pip extra `workflow` installs it).
+
+executor: slurm
+jobs: 100  # Maximum concurrent SLURM jobs
+
+# Per-rule resources can be overridden in the rule itself; these are defaults.
+default-resources:
+  - slurm_account=TODO_your_account_here
+  - slurm_partition=TODO_your_partition_here
+  - mem_mb=4000
+  - runtime=30
+  - tmpdir="/tmp"
+
+# Set per-rule resources via `set-resources:` if you want to override Snakefile
+# values without editing the rule. Example:
+# set-resources:
+#   parse_sector:
+#     mem_mb: 16000
+#     runtime: 90
+
+printshellcmds: true
+reason: true
+keep-going: true       # Don't stop the whole pipeline if one sector fails
+rerun-incomplete: true
+restart-times: 2       # Retry transient cluster failures

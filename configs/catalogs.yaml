@@ -1,0 +1,81 @@
+# =============================================================================
+# Reference catalog inventory (Subsystem B3)
+# =============================================================================
+# Each catalog entry records:
+#   - source: where to download from (URL or DOI)
+#   - local_filename: the expected filename in <paths.literature_dir>
+#   - retrieved: date the local copy was downloaded (YYYY-MM-DD)
+#   - reference: bibliographic citation
+#   - description: what this catalog is, for documentation purposes
+#
+# Re-download every ~6 months and bump the `retrieved` date. If the
+# upstream catalog publishes a new version, treat it as a new catalog
+# entry rather than overwriting (e.g., kostov2025 -> kostov2026).
+# =============================================================================
+
+catalogs:
+  prsa2022_eb:
+    source: "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/258/16"
+    local_filename: "prsa2022_binary_catalog.csv"
+    retrieved: "TODO"
+    reference: "Prsa et al. 2022, ApJS, 258, 16"
+    description: "TESS Eclipsing Binary Stars I: 4,584 EBs in Sectors 1-26."
+
+  kostov2025_eb_new:
+    source: "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/..."
+    local_filename: "kostov2025_tbl3.txt"
+    retrieved: "TODO"
+    reference: "Kostov et al. 2025, ApJS"
+    description: "TESS Ten Thousand Catalog Table 3: 7,936 new EBs from FFI data."
+
+  kostov2025_eb_known:
+    source: "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/..."
+    local_filename: "kostov2025_tbl4.txt"
+    retrieved: "TODO"
+    reference: "Kostov et al. 2025, ApJS"
+    description: "TESS Ten Thousand Catalog Table 4: 2,065 previously-known EBs."
+
+  doyle2024:
+    source: "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/MNRAS/529/1802"
+    local_filename: "doyle2024_tbl2.dat"
+    retrieved: "TODO"
+    reference: "Doyle et al. 2024, MNRAS, 529, 1802"
+    description: "TESS-SPOC FFI x Gaia DR3 cross-match, sectors 1-55."
+
+  capistrant2022_dipper:
+    source: "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/263/14"
+    local_filename: "capistrant2022_tbl1.fits"
+    retrieved: "TODO"
+    reference: "Capistrant et al. 2022, ApJS, 263, 14"
+    description: "293 TESS dipper stars (234 new candidates) + bursters/symmetric variables."
+
+  tajiri2022_dipper:
+    # NOTE: predecessor's filename suggests "tajiri2022" but the published
+    # FFI dipper catalog is Tajiri et al. 2020, ApJS, 251, 18. Confirm.
+    source: "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/251/18"
+    local_filename: "tajiri2022_tbl1.csv"
+    retrieved: "TODO"
+    reference: "Tajiri et al. 2020, ApJS, 251, 18 (or Kawamuro+22?)"
+    description: "TESS FFI dippers from sectors 1-13."
+
+  bouma2024_cpv:
+    source: "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/AJ/167/38"
+    local_filename: "bouma2024_tbl1.csv"
+    retrieved: "TODO"
+    reference: "Bouma et al. 2024, AJ, 167, 38"
+    description: "Complex Periodic Variables (CPVs) from 4 years of TESS."
+
+  # NASA Exoplanet Archive tables — pulled fresh via astroquery.
+  nasa_archive_toi:
+    source: "https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=TOI"
+    local_filename: "nasa_toi_table.csv"
+    retrieved: "TODO"
+    reference: "NASA Exoplanet Archive TOI table"
+    description: "TESS Objects of Interest — known planet candidates."
+
+  nasa_archive_confirmed:
+    source: "https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=PS"
+    local_filename: "nasa_confirmed_planets.csv"
+    retrieved: "TODO"
+    reference: "NASA Exoplanet Archive Planetary Systems table"
+    description: "Confirmed exoplanets (all missions)."

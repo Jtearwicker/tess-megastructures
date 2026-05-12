@@ -1,0 +1,32 @@
+# =============================================================================
+# Anomaly score configuration (Subsystem B6)
+# =============================================================================
+# The anomaly score is a numeric ranking applied to TCEs that pass all
+# filters. Higher score = higher priority for human vetting. The score
+# does not classify; it orders.
+#
+# v1 uses a simple linear combination of log-transformed metrics. v2 may
+# replace this with an unsupervised anomaly detector (e.g., isolation
+# forest on the metric vector).
+# =============================================================================
+
+version: "v1"
+description: "Linear combination of log-transformed DV metrics."
+
+# Component weights. The combined score is:
+#   score = w_chisq * log10(reduced_chisq)
+#         + w_odd_even * log10(odd_even_sig / odd_even_threshold)
+#         + w_snr * log10(model_fit_snr)
+#
+# w_chisq is the dominant term (poor planet fit is the primary signal of
+# interest). Other terms tilt the ranking toward high-SNR signals (which
+# are more reliably weird) and toward signals that are borderline on the
+# odd/even cut (likely missed binaries that may be more interesting).
+weights:
+  chisq: 1.0
+  odd_even: 0.3
+  snr: 0.5
+
+# Reference values for normalization (must match filter_config_v1.yaml).
+reference:
+  odd_even_threshold: 35.0

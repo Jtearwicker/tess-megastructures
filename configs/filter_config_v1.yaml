@@ -1,0 +1,87 @@
+# =============================================================================
+# Filter configuration (Subsystem B5)
+# =============================================================================
+# Each entry corresponds to one boolean filter column on the annotated TCE
+# table. The threshold values are starting points inherited from the
+# predecessor's pipeline; rationale per cut is below.
+#
+# IMPORTANT: These values affect candidate count and sensitivity. Track
+# changes in docs/decisions.md and bump the config version (filter_config_v2)
+# rather than editing in place once v1 vetting starts.
+# =============================================================================
+
+version: "v1"
+description: "v1 filter thresholds, inherited from the predecessor's pipeline."
+
+# -----------------------------------------------------------------------------
+# Data quality filters (always applied)
+# -----------------------------------------------------------------------------
+data_quality:
+  # SPOC's transit model fit must have converged. Without convergence, all
+  # downstream metrics are unreliable. Source: Twicken+18.
+  require_convergence: true
+
+  # Centroid offset significance (sigma). If the photocenter shifts during
+  # transit by more than this many sigma, the dimming source is offset from
+  # the target — likely background contamination. Source: Bryson+13, Twicken+18.
+  centroid_offset_sigma_max: 3.0
+
+  # Ghost diagnostic ratio: signal in the photometric aperture core vs. halo.
+  # Values below 1 indicate the signal is stronger in the halo than the core,
+  # suggesting a background source. Source: Twicken+18.
+  ghost_ratio_min: 1.0
+
+  # Minimum SNR. Below this the model fit and metrics become unreliable.
+  # Predecessor used 20; SPOC's TCE detection threshold is ~7.1 sigma MES.
+  # TODO: revisit once we have an SNR distribution from real data.
+  model_fit_snr_min: 20.0
+
+# -----------------------------------------------------------------------------
+# False-positive filters (catch known classes)
+# -----------------------------------------------------------------------------
+false_positive:
+  # Odd/even depth significance: alternating odd/even transit depths are
+  # a hallmark of EBs detected at half their true period. Predecessor used
+  # threshold 35 (sqrt of the raw statistic, since the raw stat is chi-square-like).
+  # TODO: justify this number; predecessor's source needs follow-up.
+  odd_even_significance_max: 35.0
+
+  # SPOC's own EB flag. Always treated as failed for v1.
+  treat_suspected_eb_as_failed: true
+
+  # Period-harmonic flag: TCEs whose period matches another TCE on the same
+  # TIC at 1:1, 2:1, or 3:1 ratios. These are typically aliased EB detections.
+  fail_period_harmonics: true
+
+# -----------------------------------------------------------------------------
+# Catalog cross-match filters
+# -----------------------------------------------------------------------------
+# When True, TCEs whose TIC appears in the listed catalog get the
+# corresponding filter flag set.
+catalog_filters:
+  prsa2022_eb: true
+  kostov2025_eb_new: true
+  kostov2025_eb_known: true
+  capistrant_dipper: true
+  tajiri_dipper: true
+  bouma_cpv: true
+  doyle_high_ruwe: false   # RUWE alone is not conclusive; informational only
+
+# -----------------------------------------------------------------------------
+# SIMBAD filter
+# -----------------------------------------------------------------------------
+simbad_filter:
+  # Whether to flag TCEs based on SIMBAD object types.
+  enabled: true
+
+  # SIMBAD types treated as "known variable" — see configs/simbad_types.yaml
+  # for the full list and rationale.
+
+# -----------------------------------------------------------------------------
+# Anomaly selection
+# -----------------------------------------------------------------------------
+# This is the inverted filter: we want signals that are POORLY fit by the
+# planet model. A TCE with reduced chi-square below this threshold is
+# considered "well-fit by a planet" and excluded from the v1 candidate set.
+anomaly:
+  reduced_chisq_min: 1.1

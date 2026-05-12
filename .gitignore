@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+.python-version
+
+# uv
+uv.lock
+
+# ---------------------------------------------------------------------------
+# Testing & coverage
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Jupyter
+# ---------------------------------------------------------------------------
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# ---------------------------------------------------------------------------
+# IDE / editor
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Project data — NEVER commit
+# ---------------------------------------------------------------------------
+data/
+!data/.gitkeep
+
+# Per-machine paths config (commit configs/paths.example.yaml instead)
+configs/paths.yaml
+
+# Snakemake state
+.snakemake/
+
+# ---------------------------------------------------------------------------
+# Logs and runtime artifacts
+# ---------------------------------------------------------------------------
+*.log
+logs/
+run/
+
+# ---------------------------------------------------------------------------
+# Vetting outputs (these are produced artifacts, not source)
+# ---------------------------------------------------------------------------
+vetting_packages/
+vetting_log.sqlite
+vetting_log.sqlite-*

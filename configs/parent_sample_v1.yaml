@@ -1,0 +1,57 @@
+# =============================================================================
+# Parent sample selection (Subsystem A1)
+# =============================================================================
+# Defines the set of TICs considered "stars searched" for the v1 analysis.
+# This is the denominator for v2 occurrence-rate calculations, so the cuts
+# here have downstream statistical consequences.
+#
+# Once v1 vetting begins, do NOT modify this file in place. Bump to
+# parent_sample_v2.yaml and version the resulting parquet.
+# =============================================================================
+
+version: "v1"
+description: "v1 parent sample: SPOC FFI main-sequence stars with reliable Gaia astrometry."
+
+# Sectors to include. SPOC FFI processing began Sector 14; the pipeline
+# inherits the predecessor's Sector 36+ scope as a starting point.
+# TODO: confirm with predecessor whether sectors 14-35 should be included.
+sectors:
+  single_sector_runs: [36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80]
+  multi_sector_runs:
+    # Multi-sector run identifiers as MAST publishes them, e.g. "s0056-s0069".
+    # Filled in once the actual MAST inventory is checked.
+    - "s0056-s0069"
+    # TODO: enumerate other multi-sector products as they are published.
+
+# Stellar property cuts. Applied to the Doyle+24 cross-matched table.
+# Each cut produces a boolean column on the parent sample; the final
+# `in_clean_sample` flag is the AND of all required cuts.
+stellar_cuts:
+  # Brightness range. SPOC FFI processing covers Tmag <= 13.5; we leave
+  # a small margin and exclude saturated bright stars.
+  tmag_min: 6.0
+  tmag_max: 14.0
+
+  # Astrometric quality from Gaia DR3.
+  parallax_over_error_min: 5.0
+
+  # Surface gravity cut to select main sequence (subgiants and giants
+  # excluded). 3.5 dex is the conventional MS/subgiant boundary.
+  log_g_min: 3.5
+
+  # RUWE: Gaia astrometric noise. RUWE > 1.4 indicates likely unresolved
+  # binarity. We KEEP these in the master table but flag them; the v1
+  # candidates paper uses the clean (RUWE < 1.4) sample.
+  ruwe_max_for_clean: 1.4
+
+  # Require valid stellar params. NaN in any of these excludes the TIC
+  # from the clean sample.
+  require_valid:
+    - effective_temp
+    - radius
+    - log_g
+    - tess_mag
+
+# Output filename (will be written to the path defined in paths.yaml).
+output:
+  filename: "parent_sample_v1.parquet"
