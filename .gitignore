@@ -77,3 +77,6 @@ run/
 vetting_packages/
 vetting_log.sqlite
 vetting_log.sqlite-*
+
+# astroquery download working directory
+tests/fixtures/mastDownload/

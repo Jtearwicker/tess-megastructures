@@ -193,12 +193,12 @@ class TestParseFixture:
         rows = parse_dv_xml(fixture_xml)
 
         # Strip provenance fields that change run-to-run.
-        VOLATILE = {"parser_version", "parsed_at"}
-        clean_rows = [{k: v for k, v in row.items() if k not in VOLATILE} for row in rows]
+        volatile = {"parser_version", "parsed_at"}
+        clean_rows = [{k: v for k, v in row.items() if k not in volatile} for row in rows]
 
         assert len(clean_rows) == len(expected_parse["rows"])
 
-        for actual, expected in zip(clean_rows, expected_parse["rows"]):
+        for actual, expected in zip(clean_rows, expected_parse["rows"], strict=True):
             _assert_rows_equal(actual, expected)
 
 
