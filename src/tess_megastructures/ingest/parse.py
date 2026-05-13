@@ -27,13 +27,13 @@ import json
 import logging
 import re
 import sys
+from pathlib import Path
+from typing import Any
 
 # We use the stdlib ElementTree for parsing. lxml is faster but
 # stdlib avoids the extra dependency at parse time, and parsing speed
 # is not currently a bottleneck.
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from typing import Any
 
 import pandas as pd
 

@@ -41,8 +41,8 @@ def main() -> int:
     print(f"  -> {len(rows)} TCE(s)")
 
     # Strip volatile fields that change run-to-run.
-    volatile = {"parser_version", "parsed_at"}
-    clean_rows = [{k: _jsonify(v) for k, v in row.items() if k not in volatile} for row in rows]
+    VOLATILE = {"parser_version", "parsed_at"}
+    clean_rows = [{k: _jsonify(v) for k, v in row.items() if k not in VOLATILE} for row in rows]
 
     payload = {
         "schema_version": 1,
@@ -59,8 +59,9 @@ def main() -> int:
 
 def _jsonify(value):
     """Convert NaN/inf to None so the JSON round-trips cleanly."""
-    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-        return None
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
     return value
 
 
