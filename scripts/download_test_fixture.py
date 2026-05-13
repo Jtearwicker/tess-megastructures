@@ -72,17 +72,15 @@ def main() -> int:
 
     # Pick the file matching our preferred sector.
     preferred_pattern = f"-{PREFERRED_SECTOR}-{PREFERRED_SECTOR}_"
-    matches = [
-        i for i, fn in enumerate(dvr_xml["productFilename"])
-        if preferred_pattern in str(fn)
-    ]
+    matches = [i for i, fn in enumerate(dvr_xml["productFilename"]) if preferred_pattern in str(fn)]
 
     if matches:
         chosen_index = matches[0]
     else:
         # Fall back to whatever single-sector file we can find
         single_sector_matches = [
-            i for i, fn in enumerate(dvr_xml["productFilename"])
+            i
+            for i, fn in enumerate(dvr_xml["productFilename"])
             if str(fn).count("-s") == 2  # exactly two -sXXXX tokens = single sector
         ]
         if single_sector_matches:
@@ -102,9 +100,7 @@ def main() -> int:
     print(f"\nSelected: {chosen_filename}")
 
     chosen_row = dvr_xml[chosen_index : chosen_index + 1]
-    manifest = Observations.download_products(
-        chosen_row, download_dir=str(fixture_dir)
-    )
+    manifest = Observations.download_products(chosen_row, download_dir=str(fixture_dir))
 
     downloaded_path = Path(manifest[0]["Local Path"])
     if not downloaded_path.exists():
@@ -126,6 +122,7 @@ def main() -> int:
 
     # Quick count of TCEs
     import xml.etree.ElementTree as ET
+
     tree = ET.parse(fixture_path)
     root = tree.getroot()
     ns = {"dv": "http://www.nasa.gov/2018/TESS/DV"}
