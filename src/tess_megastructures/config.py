@@ -11,12 +11,8 @@ trace any number back to its exact configuration.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 
 def load_config(path: str | Path) -> dict[str, Any]:

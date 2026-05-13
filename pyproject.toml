@@ -6,8 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    # Add yourself here.
-    # { name = "Your Name", email = "you@institution.edu" },
+     { name = "Joel Earwicker", email = "jtearwicker@gmail.com" },
 ]
 keywords = ["TESS", "exoplanets", "SETI", "technosignatures", "data-validation"]
 classifiers = [
@@ -64,8 +63,8 @@ all = [
 ]
 
 [project.urls]
-# Repository = "https://github.com/<your-username>/tess-megastructures"
-# Issues = "https://github.com/<your-username>/tess-megastructures/issues"
+ Repository = "https://github.com/jtearwicker/tess-megastructures"
+ Issues = "https://github.com/jtearwicker/tess-megastructures/issues"
 
 [build-system]
 requires = ["hatchling>=1.21"]

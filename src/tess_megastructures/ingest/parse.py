@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 # XML namespace used by SPOC DV reports.
 DV_NAMESPACE = {"dv": "http://www.nasa.gov/2018/TESS/DV"}
 
