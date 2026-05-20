@@ -1,0 +1,66 @@
+# =============================================================================
+# TCE sample selection (Subsystem A, Definition B)
+# =============================================================================
+# Defines the TCE-level population the v1 MegaMiner pipeline operates on.
+#
+# IMPORTANT: This is the TCE POPULATION (Definition B) -- every Threshold
+# Crossing Event that SPOC reported, aggregated across sectors. It is NOT
+# the stellar occurrence-rate denominator (Definition A, the "parent
+# sample"), which counts all SEARCHED stars including those with no TCE.
+# Definition A is deferred to v2 (see parent_sample_v1.yaml and
+# docs/decisions.md).
+#
+# The v1 candidates pipeline narrows this TCE population down to candidates;
+# the relevant "how many did we start from" number is the count of rows here.
+#
+# Once v1 analysis begins, do NOT modify this file in place. Bump to
+# tce_sample_v2.yaml and version the resulting parquet.
+# =============================================================================
+
+version: "v1"
+description: "v1 TCE sample (Definition B): all SPOC FFI TCEs, aggregated across sectors, with stellar params and selection flags."
+
+# Cut VALUES below are PLACEHOLDERS pending a science decision (see
+# docs/decisions.md). The module reads them from this file, so finalizing
+# them later is a one-line edit per value with no code change. Each cut
+# produces a boolean column; `in_clean_sample` is the AND of the required cuts.
+stellar_cuts:
+  # Brightness range. SPOC FFI processing covers roughly Tmag <= 13.5;
+  # leave margin and exclude saturated bright stars. PLACEHOLDER values.
+  tmag_min: 6.0
+  tmag_max: 14.0
+
+  # Surface gravity cut to select main sequence (subgiants/giants excluded).
+  # 3.5 dex is the conventional MS/subgiant boundary. PLACEHOLDER.
+  log_g_min: 3.5
+
+  # Astrometric quality from Gaia DR3 (requires Doyle+24 enrichment).
+  # PLACEHOLDER.
+  parallax_over_error_min: 5.0
+
+  # RUWE: Gaia astrometric noise (requires Doyle+24 enrichment). RUWE > 1.4
+  # indicates likely unresolved binarity. KEEP these but flag them; the
+  # clean sample uses RUWE < threshold. PLACEHOLDER.
+  ruwe_max_for_clean: 1.4
+
+# Stellar params that must be non-null for in_clean_sample. These come from
+# the DV-extracted columns (always present from the parser), NOT from the
+# Doyle+24 enrichment (which has coverage gaps).
+require_valid:
+  - effective_temp
+  - radius
+  - log_g
+  - tess_mag
+
+# Which cuts are REQUIRED for in_clean_sample (AND-ed together).
+# Cuts not listed here still produce their boolean column but do not
+# gate the clean-sample flag. parallax/ruwe require Doyle+24 enrichment,
+# so they are optional by default (a TIC with no Doyle match is not
+# excluded from the clean sample solely for lacking parallax info).
+required_for_clean:
+  - passed_tmag_cut
+  - passed_log_g_cut
+  - has_valid_stellar_params
+
+output:
+  filename: "tce_sample_v1.parquet"
