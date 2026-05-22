@@ -4,188 +4,202 @@ This document is the design reference for the pipeline. It is normative
 for v1; substantive deviations should be discussed and recorded in
 `docs/decisions.md`.
 
+> Scope note: v1 has changed direction more than once (see decisions.md).
+> The current plan of record (2026-05-20) is the **MegaMiner** ML-driven
+> candidate pipeline. This document describes that plan. Some details
+> (this project's exact first-author contribution, the timeline, the
+> agentic-orchestration choice) are still being resolved and are marked
+> TODO; the overall direction is committed.
+
 ## Project staging
 
-This is a multi-paper effort. v1 scope was revised on 2026-05-13 (see
-decisions.md); the current plan is:
+This is a multi-paper effort.
 
-- **v1 — Upper limits paper (~12–18 months).** Upper limits on
-  megastructure occurrence rate, marginalized over a small number of
-  Wright+16 periodic transit signature classes. Output is a published
-  catalog of vetted candidates (a byproduct) plus the headline
-  statistical claim.
-- **v2 — Extended signal coverage (post-v1).** Additional signature
-  classes, expanded multi-sector coverage, possibly Path A
-  injection-recovery rigor as a methodology paper.
+- **v1 — MegaMiner candidate catalog.** An ML-driven search over the
+  full SPOC FFI TCE population (~1M TCEs), narrowing to a vetted catalog
+  of anomalous candidates framed around megastructure signatures. The
+  headline deliverable is a candidate catalog (not an occurrence rate).
+- **v2 — Upper limits (future).** Occurrence-rate / upper-limit
+  constraints on megastructure signatures. Requires the stellar parent
+  sample (Definition A), injection-recovery, and detection-efficiency
+  characterization — all deferred from v1. v1's vetted catalog becomes
+  validation input for v2.
 - **v3 — Aperiodic search (later).** Custom light-curve search for
   Boyajian-style irregular dimming. Different ingest pipeline; a
   separable effort.
 
 The codebase currently targets v1.
 
-## v1 deliverable
+## The MegaMiner pipeline (v1)
 
-A defensible upper limit requires four things, each of which maps onto
-a subsystem (see below):
+```
+~1M TCEs                                                vetted
+(SPOC FFI)                                            candidate catalog
+   |                                                         ^
+   v                                                         |
+[Manual cuts] -> [ExoMiner score] -> [Autoencoder    ] -> [LLM-based] -> [vetting]
+                  + EB/Z score        anomaly detector     triage
+   ^                  ^                   ^                    ^
+   |                  |                   |                    |
+ ours            external (NASA)     collaborators        scope TBD
+                                     (NASA Ames)
+                 (agentic orchestration: deferred; no tool committed)
+```
 
-1. **A frozen parent sample** — explicit denominator. "We searched
-   *N* stars with these properties." (Subsystem A.)
-2. **A defined search** — what signals could have been detected.
-   Encoded as SPOC's TCE detection plus our filter chain. (Subsystems
-   A and B.)
-3. **A characterized detection efficiency** — η(signal params,
-   stellar params). What fraction of real signals would have survived
-   to be candidates. (Inject module.)
-4. **A defended candidate count** — *k*. Real candidates, vetted
-   with documented protocol. (Subsystem C.)
+The headline v1 deliverable is the vetted candidate catalog. The pipeline
+INPUT is the TCE population (Definition B; see below). Component ownership
+and maturity are recorded in decisions.md (2026-05-20 MegaMiner entry).
 
-The upper limit is then a Poisson-style bound on the rate given
-*k*, *N*, and η.
+## Sample definitions: B (v1) vs A (v2)
 
-## Signal classes for v1
+Two distinct populations, easily confused:
 
-v1 covers three to four Wright+16 periodic transit signature classes:
+- **Definition B — TCE population (v1).** Every SPOC FFI TCE, aggregated
+  across sectors. This is what MegaMiner operates on. Built by
+  `ingest/tce_sample.py` -> `tce_sample_v1.parquet`. The relevant
+  "how many did we start from" count for a candidate catalog.
+- **Definition A — stellar parent sample (v2).** Every SEARCHED star,
+  including those that produced no TCE. The denominator for an
+  occurrence-rate/upper-limit claim. Deferred to v2. The
+  `ingest/parent_sample.py` stub is a placeholder for this.
 
-1. Standard transits at anomalous parameters (deep, low-density,
-   wrong duration for inferred planet size).
-2. Depth-varying transits (Arnold beacon-style; KIC 1255b dust-tail
-   analogs).
-3. Asymmetric / non-circular transit shapes (Arnold artificial
-   silhouettes).
-4. One additional class TBD, likely anomalous depth-duration ratio.
+v1 uses B. "Parent sample" refers specifically to A and is not built yet.
 
-A single combined upper limit, marginalized across these classes
-with uniform priors, is the headline statistic. Per-class limits
-and parameter-binned sensitivity maps are reported but not the
-headline number.
+## Signal framing
+
+v1 is framed around Wright+16 megastructure transit signatures (asymmetric
+shapes, depth variation, anomalous depth/duration). In v1 these motivate
+the anomaly search and the candidate scoring/taxonomy; they are NOT used
+to compute per-class detection efficiencies (that is v2 upper-limits work).
+The known-anomaly validation set (disintegrating planets, dippers,
+Boyajian analogs) is used to confirm the pipeline recovers genuinely
+anomalous objects.
 
 ## Subsystem overview
 
 ```
-+------------------+   +------------------+   +------------------+   +------------------+
-| A. Sample &      |-->| B. Signal        |-->| C. Vetting &     |-->| D. Statistical  |
-|    data ingest   |   |    annotation    |   |    classification|   |    inference     |
-+------------------+   +------------------+   +------------------+   +------------------+
-                              ^                                          ^
-                              |                                          |
-                       +------+-------+                                  |
-                       | Inject:      |--------------------------------->|
-                       | signals +    |   eta(theta, stellar) table
-                       | recovery     |
-                       +--------------+
++------------------+   +------------------+   +------------------+
+| A. Sample &      |-->| B. Annotation &  |-->| C. Vetting &     |
+|    data ingest   |   |    ML scoring    |   |    classification|
++------------------+   +------------------+   +------------------+
 ```
 
-Each subsystem produces a versioned, persistent artifact. Subsystems
-communicate by reading and writing Parquet files, never by passing
+- **A. Ingest.** Download DV XML, parse to per-sector Parquet, aggregate
+  into the Definition-B TCE sample with stellar params and cuts.
+- **B. Annotation & ML scoring.** Derived metrics + boolean filter
+  columns (manual cuts), then ML scores: ExoMiner, EB/Z, autoencoder
+  anomaly score. Never drops rows.
+- **C. Vetting & classification.** Candidate selection by query over the
+  annotated table, LLM-assisted triage (scope TBD), human vetting with a
+  documented protocol, producing the catalog.
+
+Inject (injection-recovery) and Infer (statistical inference) subsystems
+are **v2** (upper limits) and not part of v1.
+
+Each subsystem produces a versioned, persistent Parquet artifact.
+Subsystems communicate by reading/writing Parquet, never by passing
 in-memory state.
-
-The injection-recovery system is part of v1 (not v2 as originally
-planned). It reuses subsystem B's annotation code on synthetic
-signals so that real and injected signals pass through identical
-filters; this is what makes η valid for the upper-limit calculation.
-
-## Subsystem details
-
-See `docs/per_subsystem/A_ingest.md`, `B_annotate.md`, `C_vet.md`,
-`D_infer.md` for per-subsystem detail.
 
 ## Implementation status
 
-As of 2026-05-13:
+As of 2026-05-20:
 
-- **A1 (parent sample):** scaffolded, not yet implemented.
-- **A2 (XML download):** scaffolded, not yet implemented.
-- **A3 (XML parsing):** **implemented and tested.** See
-  `src/tess_megastructures/ingest/parse.py` and `tests/test_parse.py`.
-  Smoke test against committed fixture (TIC 307210830 sector 63)
-  validates 68 output columns across 3 TCEs.
-- **A4 (state manifest):** scaffolded, not yet implemented.
-- **B (annotation):** scaffolded; modules are stubs.
-- **C (vetting):** scaffolded; Streamlit app is a stub.
-- **D (inference):** placeholder only.
-- **Inject (injection-recovery):** placeholder only.
+- **A3 (XML parsing):** implemented and tested.
+  `ingest/parse.py`, `tests/test_parse.py`. 26 tests, 83% coverage.
+  Smoke test against committed fixture (TIC 307210830 sector 63),
+  68-column schema in `data_dictionary.md`.
+- **A (TCE sample, Definition B):** implemented and tested.
+  `ingest/tce_sample.py`, `tests/test_tce_sample.py`. 16 tests against
+  synthetic data. Not yet wired to real parsed sectors (built under
+  "Order B" — develop against synthetic, wire to real data later).
+- **A2 (XML download):** scaffolded stub.
+- **A (parent sample, Definition A):** placeholder stub; v2.
+- **Catalog loaders (`catalogs/`):** stubs. Doyle+24 loader is the next
+  planned piece (enables the TCE sample's Doyle enrichment).
+- **B (annotation + ML scoring):** scaffolded stubs. ExoMiner /
+  autoencoder integration not yet started.
+- **C (vetting):** scaffolded stubs.
+- **Inject / Infer:** placeholders; v2.
 
 ## Cross-cutting design choices
 
 ### Boolean filter columns
 
-Stage B never drops rows. Every filter is a boolean column on the
-master TCE table. This preserves the rejected sample for detection
-efficiency calculations and lets us re-tune filter thresholds without
-re-parsing data. Candidate selection (C1) is a separate query over
+Annotation never drops rows. Every filter is a boolean column. Preserves
+the rejected sample (useful for v2 detection efficiency) and lets filter
+thresholds change without re-parsing. Candidate selection is a query over
 the boolean columns.
 
-### Frozen parent sample
+### Definition-B TCE sample, not a parent sample (v1)
 
-The denominator for the upper-limits calculation is
-`parent_sample_v1.parquet`, built once and never modified. If cuts
-need to change, we bump to a new file (e.g., `parent_sample_v2.parquet`).
-Output Parquets that depend on the parent sample record which version
-they used.
+v1's sample is the TCE population (`tce_sample_v1.parquet`), built once
+and versioned. The stellar parent sample (Definition A) is a v2 artifact.
+See decisions.md.
 
-### Detection efficiency: Path B with calibration
+### External / collaborator ML components
 
-η is computed via a documented MES proxy (not a full SPOC pipeline
-replica). The calibration appendix — comparing proxy MES against
-SPOC's reported MES — is a first-class output of the project. The
-upper limit must be robust to plausible miscalibration of the proxy.
-See decisions.md for the calibration plan.
+ExoMiner (NASA) and the autoencoder (NASA Ames collaborators) are
+imported, not built here. This project owns the manual cuts, the science
+framing, the signal taxonomy, the known-anomaly validation set, and
+candidate vetting. LLM triage scope is TBD; agentic orchestration is
+deferred. See decisions.md (MegaMiner entry) for ownership detail.
 
 ### Configuration in YAML
 
-All thresholds, weights, selection cuts, and signal-class parameter
-ranges live in `configs/*.yaml`. Output Parquets record the hash of
-the config that produced them so any number in the paper can be
-traced to its source.
+Thresholds, cuts, and selection parameters live in `configs/*.yaml`.
+Cut VALUES are placeholders pending a science decision; the code reads
+them from config so finalizing is a one-line edit. Output Parquets should
+record the config version/hash that produced them.
 
-### Vetting protocol pre-registered
+### Validate locally before the node
 
-The classification taxonomy and decision rules live in
-`docs/vetting_protocol_v1.md`. Finalized before main vetting begins
-and cited in the paper. For an upper-limits paper, the vetting bar
-is higher than for a candidate catalog — every survivor counts in
-the *k*.
-
-### Snakemake orchestration
-
-Per-stage parallelism, dependency tracking, and cluster submission go
-through Snakemake. Rules in `workflow/rules/`, profiles in
-`workflow/profiles/`.
+Develop + test locally (pytest + ruff) -> push -> CI green (3.11/3.12)
+-> `git pull` on tarang-node1. The node runs only validated code; heavy
+scale runs happen there after small-input validation. See decisions.md.
 
 ### Schema stability
 
-Parser output columns are documented in `docs/data_dictionary.md`.
-Columns may be added; existing columns must not change name or dtype.
-The smoke test in `tests/test_parse.py` catches accidental schema
-changes by comparing parser output against a committed
-`tests/fixtures/expected_parse.json`. To intentionally change the
-schema: run `scripts/regenerate_parse_fixture.py`, review the diff,
+Parser output columns are documented in `data_dictionary.md`. Columns may
+be added; existing columns must not change name/dtype. The smoke test in
+`tests/test_parse.py` catches accidental schema changes against a
+committed `tests/fixtures/expected_parse.json`. To change the schema
+intentionally: run `scripts/regenerate_parse_fixture.py`, review the diff,
 update the data dictionary in the same commit.
+
+### Snakemake orchestration
+
+Per-stage parallelism and dependency tracking via Snakemake. Note:
+tarang-node1 has no scheduler (direct SSH, single dedicated node), so the
+SLURM profile is currently unused; Snakemake still provides the DAG and
+local parallelism.
 
 ## What this design avoids
 
-- **Reading FITS light curves except for injection-recovery.** TCE
-  metadata is the primary input. Light curves are downloaded only for
-  the subset of stars used in injection-recovery, and (eventually) for
-  vetting plots of candidates.
-- **Custom transit fitting.** We trust SPOC's fit quality; our value-add
-  is in filtering, scoring, vetting, and the statistical layer — not
-  re-fitting.
-- **Real-time updates.** The pipeline is batch. Snakemake re-runs
-  produce updated outputs, but we don't aim for streaming.
+- **Reading FITS light curves except where required** (autoencoder
+  scoring, eventual vetting plots). TCE metadata is the primary input to
+  the early stages.
+- **Custom transit fitting.** SPOC's fits are trusted; value-add is in
+  filtering, ML scoring, vetting, and the science framing.
+- **Real-time updates.** Batch pipeline.
 
-## What this design defers to v2+
+## What this design defers to v2
 
-- Additional Wright+16 signature classes beyond the v1 four.
-- Multi-sector run handling beyond single-sector results.
-- Possibly upgrading to Path A injection-recovery as a methodology
-  follow-up paper.
+- Stellar parent sample (Definition A) and occurrence-rate / upper-limit
+  calculations.
+- Injection-recovery, MES proxy, detection-efficiency characterization.
+- Per-class Wright+16 detection efficiencies.
 
 ## What this design defers to v3
 
-- Aperiodic / irregular-dimming search (Boyajian-class signals).
-- Custom transit-search algorithms beyond what SPOC provides.
+- Aperiodic / irregular-dimming search (Boyajian-class signals), which
+  needs its own FFI-light-curve ingest pipeline.
 
-These require their own ingest pipeline (FFI light curves rather than
-TCE XML); the v1 architecture intentionally does not constrain that
-future design.
+## Open questions (tracked in decisions.md)
+
+- This project's specific first-author contribution within the
+  multi-person MegaMiner effort.
+- Timeline.
+- LLM-triage scope (assistant vs. classifier).
+- Agentic-orchestration tool and whether it is in v1 at all.
+- Whether an ExoMiner FFI score catalog already exists (arXiv 2601.14877)
+  vs. running ExoMiner ourselves.

@@ -269,6 +269,159 @@ future analysis needs it; it's still in the source XML.
 
 ---
 
+## 2026-05-19 — Reverted: v1 back to candidates catalog (not upper limits)
+
+**Choice:** v1 is once again a candidate catalog, NOT an upper-limits
+paper. Upper limits return to v2/future.
+
+**Reasoning:** The 2026-05-13 switch to upper-limits-in-v1 was
+re-examined against the timeline. A defensible upper limit requires the
+full injection-recovery + detection-efficiency apparatus (12-18+ months
+solo), which did not fit the ~9-month expectation. Rather than compromise
+rigor, v1 reverts to the candidate-catalog deliverable, which is
+publishable, citable, and sets up v2 upper limits from a stronger
+position (v1's vetted catalog becomes v2's validation input).
+
+**Supersedes:** 2026-05-13 — v1 scope changed to upper limits.
+
+**Implications:**
+
+- Injection-recovery, MES proxy, and the inject/infer subsystems return
+  to v2 scope. Not built for v1.
+- The "four Wright+16 signal classes" and "single combined upper limit"
+  decisions (both 2026-05-13) are scoped to v2; they describe the
+  upper-limits framing, not the v1 candidate catalog.
+- Vetting bar returns to candidate-catalog level (defensible
+  classifications) rather than the stricter every-survivor-counts bar
+  that upper limits demand.
+
+---
+
+## 2026-05-20 — v1 adopts the MegaMiner ML pipeline (plan of record)
+
+**Choice:** v1 is the MegaMiner pipeline: an ML-driven candidate search
+over the full SPOC FFI TCE population (~1M TCEs across all FFI sectors),
+narrowing to a vetted anomaly/candidate catalog framed around
+megastructure signatures. Pipeline stages:
+
+  TCEs -> manual cuts -> ExoMiner score + EB/Z score
+       -> autoencoder anomaly detector -> LLM-based triage
+       -> (agentic orchestration) -> vetted candidates
+
+**Alternatives considered:**
+
+- The prior hand-built candidate pipeline (manual filters + human
+  vetting only). Superseded by the ML approach, which scales to ~1M TCEs.
+- Building all ML components in-house. Rejected: several components are
+  external/collaborator-provided (see below).
+
+**Reasoning:** Advisor's direction. The ML pipeline scales the candidate
+search far beyond what manual filtering + human vetting could cover, and
+brings in established tools (ExoMiner) plus collaborator ML expertise.
+The headline v1 deliverable remains a candidate catalog (Definition B
+TCE population in, vetted candidates out) — upper limits stay in v2.
+
+**Supersedes:** the candidate-pipeline framing in 2026-05-19 (same
+deliverable — a candidate catalog — but a different, ML-driven method).
+
+**Component ownership (as currently understood):**
+
+- **Manual cuts / filtering:** this project (builds on the parser +
+  annotation work). Ours.
+- **ExoMiner scoring:** external published tool (NASA). Integration, not
+  novel ML. Note: ExoMiner++ 2.0 (Jan 2026, arXiv 2601.14877) vets FFI
+  TCEs specifically; an FFI score catalog may already exist — TODO check
+  before building integration.
+- **Autoencoder anomaly detector:** provided by NASA Ames collaborators
+  (imported, NOT built from scratch here).
+- **LLM-based triage:** scope TBD; intended use is literature
+  cross-referencing / candidate summarization / human-in-the-loop
+  triage, NOT an autonomous final classifier.
+- **Agentic orchestration:** deferred. NemoClaw (Nvidia) was floated as
+  one option; no agent is committed. Cannot orchestrate a pipeline that
+  does not yet exist — this is a last layer, not a foundation.
+
+**TODOs (unresolved details within the committed MegaMiner plan):**
+
+- Confirm this project's specific first-author contribution within the
+  multi-person effort (collaborators: iangelo/Isabel Angelo
+  [predecessor], vishalg). Likely core: filtering + science framing +
+  signal taxonomy + known-anomaly validation set + candidate vetting.
+- Confirm timeline.
+- Resolve which agentic-orchestration tool, if any, and whether it is in
+  v1 at all.
+
+---
+
+## 2026-05-20 — v1 sample is the TCE population (Definition B), not the stellar parent sample (Definition A)
+
+**Choice:** The v1 "sample" is the TCE population: every SPOC FFI TCE,
+aggregated across sectors (Definition B). The stellar occurrence-rate
+denominator (all searched stars including non-detections; Definition A)
+is deferred to v2.
+
+**Alternatives considered:**
+
+- Definition A (all searched FFI targets, ~160k/sector). The correct
+  denominator for an occurrence-rate/upper-limit claim, but v1 makes no
+  such claim, and A requires a separate large MAST target-list query.
+- Build both now. Over-building for a v1 that does not need A.
+
+**Reasoning:** v1 (MegaMiner candidate catalog) operates ON TCEs and
+makes a candidate claim, not a rate claim. The relevant population is
+therefore the TCE population (B), which also reuses parser output rather
+than requiring a new query. A is a v2 concern (upper limits). The module
+is structured so A can be added later as an additive change.
+
+**Naming consequence:** the Definition-B artifact is named
+`tce_sample_v1.parquet` / `tce_sample.py`, NOT "parent sample." The term
+"parent sample" is reserved for the Definition-A stellar denominator
+(the existing `parent_sample.py` stub) when v2 needs it. Calling a
+TCE-level table a "parent sample" would mislead, since the term has a
+specific occurrence-rate meaning.
+
+---
+
+## 2026-05-20 — TCE sample module design (Definition B)
+
+**Choice:** `tce_sample.py` builds the Definition-B sample with:
+
+- One row per `(tic_id, planet_number, sector)` — fully granular;
+  multi-sector detections of the same signal are separate rows.
+- A `run_type` column ("single_sector"/"multi_sector"), derived from the
+  parser's `n_difference_images`.
+- DV-extracted stellar params as PRIMARY (complete coverage from the
+  parser); Doyle+24 Gaia params as an ENRICHMENT layer (`doyle_` prefix,
+  flagged by `has_doyle_params`), attached only where the cross-match
+  hits.
+- Configurable boolean cuts (tmag, log_g, parallax SNR, RUWE) with
+  PLACEHOLDER values; `in_clean_sample` is the AND of the cuts listed in
+  `required_for_clean`. Rows are never dropped.
+
+**Reasoning:** Granularity is reversible (collapse later) but loss is
+not. DV-params-primary sidesteps Doyle+24 coverage gaps. Cut VALUES are a
+science decision deferred to later; the module reads them from
+`tce_sample_v1.yaml` so finalizing them is a one-line edit, no code
+change. Mirrors the parser's conventions (snake_case, nullable,
+never-drop-rows).
+
+---
+
+## 2026-05-20 — Validate locally before running on the node
+
+**Choice:** Standing workflow: develop and test on a local machine
+(pytest + ruff green) -> push -> CI green (3.11/3.12) -> only then
+`git pull` on tarang-node1. The node receives only code already
+validated elsewhere; CI is the authoritative gate before the node.
+
+**Reasoning:** Keeps the cluster as an execution environment, not a
+debugging environment. Local machines run newer Python (3.13/3.14) than
+the node (3.12) and CI (3.11/3.12), so CI — not local green — is the
+authoritative cross-version check. Heavy scale runs (full-sector parse,
+ExoMiner, etc.) happen on the node only after small-input validation.
+
+---
+
 ## TEMPLATE for future entries
 
 ## YYYY-MM-DD — Short summary
