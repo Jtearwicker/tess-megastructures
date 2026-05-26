@@ -23,6 +23,10 @@ processed_data_dir: "/path/to/scratch/tess-megastructures/processed"
 
 # Literature catalogs (Prsa, Kostov, etc.). Small (~MB).
 literature_dir: "/path/to/scratch/tess-megastructures/literature"
+# Doyle+24 reference catalogue (Vizier J/MNRAS/529/1802), fixed-width .dat.gz.
+# Downloaded once and stored durably. ~293 MB gzipped.
+# (On the compute node this lives under the shared exoplanet store.)
+doyle2024_catalog: "/path/to/literature/doyle2024/targets.dat.gz"
 
 # SIMBAD query cache. Persists across runs. Small.
 simbad_cache_dir: "/path/to/scratch/tess-megastructures/simbad_cache"
