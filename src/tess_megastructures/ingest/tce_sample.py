@@ -25,8 +25,17 @@ Stellar parameters
 DV-extracted stellar params (effective_temp, radius, log_g, tess_mag, ...)
 are the PRIMARY source -- they are present for every TCE straight from the
 parser, with no cross-match coverage gaps. Doyle+24 Gaia-derived params
-(parallax, ruwe, ...) are an ENRICHMENT layer, attached where the TIC
-cross-match hits and flagged by ``has_doyle_params``.
+(``doyle_parallax``, ``doyle_ruwe``, ...) are an ENRICHMENT layer,
+attached where the TIC cross-match hits and flagged by
+``has_doyle_params``.
+
+Contract with the Doyle loader
+------------------------------
+``enrich_with_doyle`` expects the Doyle DataFrame to ALREADY have
+``doyle_``-prefixed columns (which is what ``catalogs.doyle2024.load_doyle2024``
+produces). The enrichment merges those columns in directly; it does NOT
+re-prefix. Callers passing in unprefixed Doyle data will end up with
+column names ``apply_cuts`` does not recognize.
 
 Selection cuts
 --------------
@@ -123,17 +132,22 @@ def enrich_with_doyle(
 ) -> pd.DataFrame:
     """Left-join Doyle+24 Gaia-derived params onto the TCE table by TIC.
 
-    Adds ``has_doyle_params`` (True where the cross-match hit). DV-extracted
-    stellar params are left untouched; Doyle columns are added with a
-    ``doyle_`` prefix to avoid collisions.
+    Adds ``has_doyle_params`` (True where the cross-match hit).
+
+    The Doyle DataFrame is expected to come from
+    ``catalogs.doyle2024.load_doyle2024`` and ALREADY have ``doyle_``-prefixed
+    columns -- this function merges those columns straight in. It does
+    NOT re-prefix; doing so would produce ``doyle_doyle_*`` names that
+    ``apply_cuts`` could not find.
 
     Parameters
     ----------
     df : DataFrame
         Aggregated TCE table (must have ``tic_id``).
     doyle : DataFrame or None
-        Doyle+24 table with a ``tic_id`` column and Gaia params. If None,
-        all rows get ``has_doyle_params = False`` and no Doyle columns.
+        Doyle+24 table with a ``tic_id`` column plus already-prefixed
+        ``doyle_*`` columns. If None, all rows get ``has_doyle_params =
+        False`` and no Doyle columns are attached.
     """
     out = df.copy()
 
@@ -142,11 +156,9 @@ def enrich_with_doyle(
         return out
 
     doyle_indexed = doyle.drop_duplicates(subset="tic_id").set_index("tic_id")
-    # Prefix Doyle columns to avoid clobbering DV-extracted params.
-    doyle_prefixed = doyle_indexed.add_prefix("doyle_")
 
     out = out.merge(
-        doyle_prefixed,
+        doyle_indexed,
         how="left",
         left_on="tic_id",
         right_index=True,
@@ -247,7 +259,9 @@ def build_tce_sample(
     output_path : Path, optional
         If given, write the result to this Parquet path.
     doyle : DataFrame, optional
-        Doyle+24 table for enrichment. If None, no enrichment is applied.
+        Doyle+24 table for enrichment, already produced by
+        ``catalogs.doyle2024.load_doyle2024`` (i.e. with ``doyle_``-prefixed
+        columns). If None, no enrichment is applied.
 
     Returns
     -------

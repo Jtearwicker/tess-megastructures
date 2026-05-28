@@ -2,6 +2,10 @@
 
 Uses synthetic in-memory DataFrames so the tests are self-contained and
 do not depend on parsed sector data, MAST downloads, or external catalogs.
+
+Doyle test fixtures use ``doyle_``-prefixed columns to match what the real
+``catalogs.doyle2024.load_doyle2024`` loader produces. ``enrich_with_doyle``
+expects already-prefixed Doyle data and does NOT re-prefix.
 """
 
 from __future__ import annotations
@@ -134,9 +138,11 @@ class TestDoyleEnrichment:
 
     def test_match_attaches_params_and_flag(self):
         df = _make_tce_frame([{"tic_id": 111}, {"tic_id": 999}])
-        doyle = pd.DataFrame([{"tic_id": 111, "ruwe": 1.1, "parallax_over_error": 20.0}])
+        # Doyle data comes in already doyle_-prefixed (loader's output shape)
+        doyle = pd.DataFrame(
+            [{"tic_id": 111, "doyle_ruwe": 1.1, "doyle_parallax_over_error": 20.0}]
+        )
         out = enrich_with_doyle(df, doyle)
-        # TIC 111 matched, 999 did not
         row_111 = out[out["tic_id"] == 111].iloc[0]
         row_999 = out[out["tic_id"] == 999].iloc[0]
         assert bool(row_111["has_doyle_params"]) is True
@@ -146,13 +152,22 @@ class TestDoyleEnrichment:
         assert pd.isna(row_999["doyle_ruwe"])
 
     def test_does_not_clobber_dv_params(self):
-        # Doyle has a column that would collide without the prefix
+        # Doyle radius comes in already prefixed as doyle_radius
         df = _make_tce_frame([{"tic_id": 111, "radius": 1.23}])
-        doyle = pd.DataFrame([{"tic_id": 111, "radius": 9.99}])
+        doyle = pd.DataFrame([{"tic_id": 111, "doyle_radius": 9.99}])
         out = enrich_with_doyle(df, doyle)
-        # DV radius preserved; Doyle radius is under doyle_radius
+        # DV radius preserved; Doyle radius under doyle_radius (no double prefix)
         assert out["radius"].iloc[0] == pytest.approx(1.23)
         assert out["doyle_radius"].iloc[0] == pytest.approx(9.99)
+
+    def test_no_double_prefix(self):
+        """Regression: enrich must NOT add a second doyle_ prefix."""
+        df = _make_tce_frame([{"tic_id": 111}])
+        doyle = pd.DataFrame([{"tic_id": 111, "doyle_ruwe": 1.1}])
+        out = enrich_with_doyle(df, doyle)
+        # doyle_ruwe must exist; doyle_doyle_ruwe must NOT
+        assert "doyle_ruwe" in out.columns
+        assert "doyle_doyle_ruwe" not in out.columns
 
 
 # -------------------------------------------------------------------------
@@ -213,6 +228,91 @@ class TestCuts:
         assert len(out) == 5
         assert out["in_clean_sample"].sum() == 0
 
+    def test_parallax_and_ruwe_cuts_fire_when_doyle_present(self, basic_config):
+        """Regression for the v1 first-run bug: when Doyle columns are
+        present with the expected doyle_ names, parallax & ruwe cuts must
+        actually evaluate (not return all NA)."""
+        df = pd.DataFrame(
+            [
+                # Good astrometry: parallax SNR high, RUWE low (single star)
+                {
+                    "tic_id": 1,
+                    "tess_mag": 10.0,
+                    "log_g": 4.5,
+                    "effective_temp": 5500.0,
+                    "radius": 1.0,
+                    "doyle_parallax_over_error": 50.0,
+                    "doyle_ruwe": 1.0,
+                },
+                # Poor astrometry: low parallax SNR, high RUWE (likely binary)
+                {
+                    "tic_id": 2,
+                    "tess_mag": 10.0,
+                    "log_g": 4.5,
+                    "effective_temp": 5500.0,
+                    "radius": 1.0,
+                    "doyle_parallax_over_error": 2.0,
+                    "doyle_ruwe": 2.0,
+                },
+            ]
+        )
+        out = apply_cuts(df, basic_config)
+        assert list(out["passed_parallax_cut"]) == [True, False]
+        assert list(out["passed_ruwe_cut"]) == [True, False]
+
+
+# -------------------------------------------------------------------------
+# Integration: loader -> enrich -> cuts (catches double-prefix class of bug)
+# -------------------------------------------------------------------------
+
+
+class TestLoaderEnrichCutsIntegration:
+    """End-to-end contract test for the loader -> enrich -> cuts pipeline.
+
+    Reads a tiny mock 'Doyle' DataFrame in the shape the real
+    ``load_doyle2024`` produces (doyle_-prefixed columns, tic_id as int64)
+    and verifies the Doyle-dependent cuts actually fire after enrich.
+    """
+
+    def test_doyle_cuts_fire_through_full_pipeline(self, basic_config):
+        # Simulate the real loader's output shape: tic_id int64 + doyle_* columns
+        doyle_like = pd.DataFrame(
+            {
+                "tic_id": pd.Series([111, 222], dtype="int64"),
+                "doyle_ruwe": [1.0, 2.5],
+                "doyle_parallax_over_error": [50.0, 3.0],
+                "doyle_teff": [5800.0, 6100.0],
+            }
+        )
+        tces = _make_tce_frame(
+            [
+                {"tic_id": 111},  # matches; good astrometry
+                {"tic_id": 222},  # matches; bad astrometry
+                {"tic_id": 999},  # no Doyle match
+            ]
+        )
+
+        enriched = enrich_with_doyle(tces, doyle_like)
+        # Single doyle_ prefix only — no doyle_doyle_ columns
+        assert all(not c.startswith("doyle_doyle_") for c in enriched.columns)
+        assert "doyle_ruwe" in enriched.columns
+        assert "doyle_parallax_over_error" in enriched.columns
+
+        # has_doyle_params correct
+        flags = enriched.set_index("tic_id")["has_doyle_params"].to_dict()
+        assert flags[111] is True or flags[111] == True  # noqa: E712
+        assert flags[222] is True or flags[222] == True  # noqa: E712
+        assert flags[999] is False or flags[999] == False  # noqa: E712
+
+        # Cuts evaluate to real booleans, not all NA
+        cut = apply_cuts(enriched, basic_config)
+        pl = cut.set_index("tic_id")["passed_parallax_cut"].to_dict()
+        rw = cut.set_index("tic_id")["passed_ruwe_cut"].to_dict()
+        assert pl[111] is True or pl[111] == True  # noqa: E712  # good astrometry passes
+        assert pl[222] is False or pl[222] == False  # noqa: E712  # bad parallax fails
+        assert rw[111] is True or rw[111] == True  # noqa: E712
+        assert rw[222] is False or rw[222] == False  # noqa: E712
+
 
 # -------------------------------------------------------------------------
 # End-to-end
@@ -221,7 +321,10 @@ class TestCuts:
 
 class TestBuildTceSample:
     def test_end_to_end_writes_parquet(self, two_sector_frames, basic_config, tmp_path):
-        doyle = pd.DataFrame([{"tic_id": 111, "ruwe": 1.1, "parallax_over_error": 20.0}])
+        # Doyle input must be in loader-output shape (doyle_-prefixed columns)
+        doyle = pd.DataFrame(
+            [{"tic_id": 111, "doyle_ruwe": 1.1, "doyle_parallax_over_error": 20.0}]
+        )
         out_path = tmp_path / "tce_sample_v1.parquet"
         df = build_tce_sample(two_sector_frames, basic_config, out_path, doyle=doyle)
 
