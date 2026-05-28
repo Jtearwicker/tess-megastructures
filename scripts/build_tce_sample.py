@@ -108,20 +108,20 @@ def main() -> int:
     }
 
     print()
-    print(f"========== TCE sample build summary ==========")
+    print("========== TCE sample build summary ==========")
     print(f"  output:                  {output_path}")
     print(f"  rows (TCEs):             {n_total:,}")
     print(f"  unique TICs:             {df['tic_id'].nunique():,}")
     print(f"  Doyle match:             {n_with_doyle:,}  ({n_with_doyle / n_total * 100:.1f}%)")
     print(f"  in_clean_sample:         {n_clean:,}  ({n_clean / n_total * 100:.1f}%)")
-    print(f"  per-cut pass counts (raw, before AND):")
+    print("  per-cut pass counts (raw, before AND):")
     for col, n in cut_summary.items():
         print(f"    {col:32s}  {n:>6,}  ({n / n_total * 100:.1f}%)")
     if "run_type" in df.columns:
-        print(f"  run_type breakdown:")
+        print("  run_type breakdown:")
         for rt, n in df["run_type"].value_counts().items():
             print(f"    {str(rt):32s}  {n:>6,}")
-    print(f"==============================================")
+    print("==============================================")
     print()
     return 0
 
