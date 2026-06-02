@@ -422,6 +422,87 @@ ExoMiner, etc.) happen on the node only after small-input validation.
 
 ---
 
+## 2026-05-28 — Diagnostic vetting as flags, not cuts
+
+**Choice:** Reimplement Isabel's `create_tce_batches.py` vetting chain as
+boolean `flag_*` columns on the TCE sample (True = suspicious), never
+dropping rows. Candidate selection is a query over the flags rather than a
+destructive batch-priority filter. Thresholds live in config.
+
+**Alternatives considered:** (1) Reproduce the original hard-cut batch
+chain that removes rows at each stage. (2) Skip classical filtering
+entirely and rely on the ML stages (ExoMiner, autoencoder) for
+false-positive rejection.
+
+**Reasoning:** Flags preserve information that hard cuts destroy — for an
+anomaly search, today's "junk" filter could discard tomorrow's interesting
+object. Flagging also defers the contentious threshold decisions (the
+inherited magic numbers) to a single tunable query step, and complements
+rather than competes with the ML scores. Consistent with the existing
+never-drop-rows principle already used for the stellar cuts.
+
+**Supersedes:** Extends the never-drop-rows decision to the full diagnostic
+layer.
+
+---
+
+## 2026-05-28 — Doyle+24 is a stellar-parameter source, not an EB catalog
+
+**Choice:** Use Doyle+24 only for stellar parameters and astrometric
+binarity indicators (RUWE, parallax SNR). Use dedicated eclipsing-binary
+catalogs (Prsa+22, Kostov+25) for actual EB identification.
+
+**Alternatives considered:** Treating Doyle's RUWE / non-single-star flags
+as an EB catalog (the implicit prior usage that prompted a team concern
+that Doyle "includes non-EBs and misses known EBs").
+
+**Reasoning:** Doyle+24 is a Gaia-based characterization of the full
+SPOC FFI target sample, not an EB catalog. RUWE > 1.4 is a soft astrometric
+binarity hint, not an EB confirmation — so the sample necessarily includes
+non-EBs (most targets) and misses EBs with clean astrometry. The concern is
+real but points at a usage error, not a defect. Doyle stays for params; EB
+identification moves to purpose-built catalogs.
+
+---
+
+## 2026-05-28 — TIC stellar-parameter sentinel value
+
+**Choice:** Treat the value combination Teff = 31000 K, log g = 5.59962,
+radius = 0.18 R_sun as a sentinel for "no real stellar characterization,"
+to be flagged (future Subsystem B annotation) rather than trusted.
+
+**Alternatives considered:** Treating these as real stellar parameters.
+
+**Reasoning:** Discovered in the first s0055 end-to-end run: three distinct
+TICs (different magnitudes) carried bit-identical Teff/log g/radius to many
+decimal places. The combination is physically impossible (31000 K is an
+O-type star; 0.18 R_sun is an M dwarf), so it is a placeholder the TIC
+emits when parameters are unknown. ~0.1% of TCEs (3 / 2795) in s0055. It
+passes the `log_g >= 3.5` cut by coincidence, so existing cuts do not catch
+it; a dedicated `has_sentinel_stellar_params` flag is the right fix when
+catalog/annotation work resumes.
+
+---
+
+## 2026-05-28 — Deep-eclipse EBs are the dominant survivor contaminant
+
+**Choice:** Record (for the catalog-cross-match design) that symmetric,
+on-target, deep eclipsing binaries pass the current diagnostic chain and
+dominate the unflagged survivor set. Plan to address via EB-catalog
+cross-match (Prsa, Kostov) and consider a depth-based flag.
+
+**Alternatives considered:** Assuming the current diagnostics already remove
+EBs adequately.
+
+**Reasoning:** The first s0055 run produced 43 unflagged TCEs; a large
+fraction had transit depths of 10–30%, which are eclipsing binaries (planets
+cap near 1–2%). They survive because the existing tests catch asymmetric or
+blended EBs (odd/even, ghost, centroid) but not clean, symmetric, on-target
+deep eclipses. This motivates the catalog cross-match as the next build and
+a possible `flag_deep_eclipse`. (The depth flag is a proposed addition to
+Isabel's chain, pending team input.)
+
+
 ## TEMPLATE for future entries
 
 ## YYYY-MM-DD — Short summary

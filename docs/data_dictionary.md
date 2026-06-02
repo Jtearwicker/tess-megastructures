@@ -161,12 +161,44 @@ placeholder. Schema TBD when v2 work begins.
 
 ---
 
-## `tces_annotated_v1.parquet` (Subsystem B)
+## Subsystem B columns (added to `tce_sample_v1.parquet`)
 
-One row per TCE. Same row count and primary key as the TCE sample, with
-added derived metrics and `failed_*` boolean filter columns.
+Subsystem B does not produce a separate file. It adds derived metrics and
+boolean flag columns in place on `tce_sample_v1.parquet` during the build.
+Flags use the convention **True = suspicious** (opposite polarity from the
+`passed_*` stellar cuts, where True = good). Rows are never dropped.
 
-TODO: Document after annotation modules are implemented.
+Produced by `src/tess_megastructures/annotate/derived_metrics.py` and
+`src/tess_megastructures/annotate/diagnostics.py`. Thresholds come from the
+`diagnostics:` block of `configs/tce_sample_v1.yaml`.
+
+### Derived metrics
+
+| Column | Type | Source | Definition |
+|---|---|---|---|
+| `model_chi_square_reduced` | float64 | derived | `model_chi_square / model_degrees_of_freedom` |
+| `odd_even_depth_sig` | float64 | derived | `sqrt(odd_even_depth_statistic)` |
+| `ghost_diagnostic_ratio` | float64 | derived | `ghost_core_correlation / ghost_halo_correlation` |
+| `matching_period_signals` | bool | derived | TIC has >=2 TCEs with periods within `period_match_tol_days` |
+
+### Diagnostic flags (True = suspicious)
+
+| Column | Type | Source | Definition |
+|---|---|---|---|
+| `flag_suspected_eb` | bool | derived | SPOC `suspected_eclipsing_binary` is True |
+| `flag_no_convergence` | bool | derived | `full_convergence` is False |
+| `flag_invalid_odd_even` | bool | derived | `odd_even_depth_significance == -1` (DV sentinel) |
+| `flag_background_eb` | bool | derived | `ghost_diagnostic_ratio < ghost_ratio_min` |
+| `flag_centroid_offset` | bool | derived | off-target: both aperture offsets >= `centroid_offset_max_sigma` |
+| `flag_matching_period` | bool | derived | `matching_period_signals` is True |
+| `flag_large_odd_even` | bool | derived | `odd_even_depth_sig > odd_even_sig_max` |
+| `flag_low_snr` | bool | derived | `model_fit_snr < snr_min` |
+| `flag_low_rchisq` | bool | derived | `model_chi_square_reduced < reduced_chisq_min` |
+| `any_diagnostic_flag` | bool | derived | OR of all `flag_*` columns |
+
+NaN policy: a flag fires only on positive evidence; missing data is never
+flagged. The catalog cross-match flag (`flag_catalog_binary`) is not yet
+implemented. See `docs/per_subsystem/B_annotate.md`.
 
 ## `vetting_queue.parquet` (Subsystem C)
 

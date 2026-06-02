@@ -87,6 +87,19 @@ uv run snakemake --profile workflow/profiles/cluster all
 
 See `docs/per_subsystem/` for what each stage does.
 
+### Inspect a built sample
+
+Generate a standalone HTML inspection report (flag breakdown, distributions,
+co-occurrence, survivor table) from a built TCE sample:
+
+```bash
+uv run python scripts/make_dashboard.py path/to/tce_sample_v1.parquet
+```
+
+It writes a self-contained HTML file next to the input. See
+`docs/per_subsystem/B_annotate.md` for what each section shows.
+
+
 ## Repository layout
 
 ```
