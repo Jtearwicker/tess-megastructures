@@ -25,6 +25,49 @@ from pathlib import Path
 
 import pandas as pd
 
+# Human-readable labels for the diagnostic flags.
+FLAG_LABELS = {
+    "flag_suspected_eb": "Suspected eclipsing binary (SPOC)",
+    "flag_no_convergence": "Transit fit did not converge",
+    "flag_invalid_odd_even": "Invalid odd/even statistic",
+    "flag_background_eb": "Background / blended EB (ghost)",
+    "flag_centroid_offset": "Off-target centroid offset",
+    "flag_matching_period": "Matching-period signals",
+    "flag_large_odd_even": "Large odd/even depth difference",
+    "flag_low_snr": "Low S/N",
+    "flag_low_rchisq": "Low reduced chi-squared",
+}
+
+# Human-readable labels for the stellar cuts.
+CUT_LABELS = {
+    "passed_tmag_cut": "Tmag in range",
+    "passed_log_g_cut": "Surface gravity (log g)",
+    "passed_parallax_cut": "Parallax S/N",
+    "passed_ruwe_cut": "RUWE (astrometric)",
+}
+
+
+def _flag_label(col: str) -> str:
+    return FLAG_LABELS.get(col, col.replace("flag_", "").replace("_", " "))
+
+
+def _cut_label(col: str) -> str:
+    return CUT_LABELS.get(col, col.replace("passed_", "").replace("_", " "))
+
+
+def _sector_str(df: pd.DataFrame) -> str:
+    """Human string of the sector(s) present in the sample."""
+    if "sector" not in df.columns:
+        return "unknown"
+    secs = sorted(pd.to_numeric(df["sector"], errors="coerce").dropna().unique())
+    if not secs:
+        return "unknown"
+    secs = [int(s) for s in secs]
+    if len(secs) == 1:
+        return f"s{secs[0]:04d}"
+    return ", ".join(f"s{s:04d}" for s in secs)
+
+
 # Columns shown in the survivor table, if present.
 SURVIVOR_COLUMNS = [
     "tic_id",
@@ -68,7 +111,6 @@ def _histogram_svg(values: pd.Series, title: str, bins: int = 30, log_x: bool = 
     if v.empty:
         return f"<div class='hist'><div class='htitle'>{html.escape(title)}</div><div class='empty'>no data</div></div>"
     plot_v = v.copy()
-    label_lo, label_hi = v.min(), v.max()
     if log_x:
         plot_v = plot_v[plot_v > 0]
         if plot_v.empty:
@@ -90,12 +132,22 @@ def _histogram_svg(values: pd.Series, title: str, bins: int = 30, log_x: bool = 
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{max(bw - 1, 0.5):.1f}" '
             f'height="{bh:.1f}" fill="#5a8aa8"/>'
         )
-    xlabel = "log10 scale" if log_x else f"{label_lo:.3g} to {label_hi:.3g}"
+
+    # Summary statistics (on the original, non-logged values).
+    med = v.median()
+    mean = v.mean()
+    lo = v.min()
+    hi = v.max()
+    scale_note = " &middot; log-binned" if log_x else ""
+    stats = (
+        f"median {med:,.4g} &middot; mean {mean:,.4g} &middot; min {lo:,.4g} &middot; max {hi:,.4g}"
+    )
     return f"""
     <div class="hist">
       <div class="htitle">{html.escape(title)}</div>
       <svg viewBox="0 0 {w} {h}" class="histsvg">{"".join(bars)}</svg>
-      <div class="hsub">range: {html.escape(xlabel)} &middot; n={len(v):,}</div>
+      <div class="hstats">{stats}</div>
+      <div class="hsub">n={len(v):,}{scale_note}</div>
     </div>"""
 
 
@@ -175,12 +227,10 @@ def build_report(df: pd.DataFrame, source_name: str) -> str:
 
     # --- per-flag bars (sorted desc)
     flag_counts = sorted(((c, _bool_count(df, c)) for c in flag_cols), key=lambda x: -x[1])
-    flag_bars = "".join(_bar(c.replace("flag_", ""), n, n_total, "#c0712e") for c, n in flag_counts)
+    flag_bars = "".join(_bar(_flag_label(c), n, n_total, "#c0712e") for c, n in flag_counts)
 
     # --- stellar cut bars
-    cut_bars = "".join(
-        _bar(c.replace("passed_", ""), _bool_count(df, c), n_total) for c in cut_cols
-    )
+    cut_bars = "".join(_bar(_cut_label(c), _bool_count(df, c), n_total) for c in cut_cols)
 
     # --- distributions
     hists = ""
@@ -200,6 +250,7 @@ def build_report(df: pd.DataFrame, source_name: str) -> str:
 
     n_tics = df["tic_id"].nunique() if "tic_id" in df.columns else 0
     generated = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    sectors = _sector_str(df)
 
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -219,15 +270,23 @@ def build_report(df: pd.DataFrame, source_name: str) -> str:
   .stat .big {{ font-size:30px; font-weight:700; color:#2f6090; }}
   .stat .lbl {{ font-size:12px; color:var(--muted); }}
   .row {{ display:flex; align-items:center; gap:10px; margin:5px 0; }}
-  .rlabel {{ width:230px; font-size:13px; text-align:right; }}
-  .track {{ flex:1; background:#eef1f4; border-radius:5px; height:20px; overflow:hidden; }}
+  .rlabel {{ width:230px; font-size:13px; text-align:right; flex:none; }}
+  .track {{ flex:1 1 auto; min-width:80px; background:#eef1f4; border-radius:5px; height:20px; overflow:hidden; }}
   .fill {{ height:100%; border-radius:5px; }}
-  .rval {{ width:120px; font-size:13px; }}
+  .rval {{ width:120px; font-size:13px; flex:none; white-space:nowrap; }}
   .pct {{ color:var(--muted); }}
+  /* In the side-by-side flags/cuts section, columns must be wide enough that
+     the bar track survives. Give each column a real basis and shrink the
+     label so the track is never squeezed to zero. */
+  .twocol {{ display:flex; gap:32px; flex-wrap:wrap; align-items:flex-start; }}
+  .twocol > div {{ flex:1 1 540px; min-width:480px; }}
+  .twocol .rlabel {{ width:210px; }}
+  .twocol .rval {{ width:110px; }}
   .hists {{ display:flex; flex-wrap:wrap; gap:18px; }}
   .hist {{ background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }}
   .htitle {{ font-size:13px; font-weight:600; margin-bottom:4px; }}
   .histsvg {{ width:360px; height:130px; }}
+  .hstats {{ font-size:11px; color:var(--ink); margin-top:2px; }}
   .hsub {{ font-size:11px; color:var(--muted); }}
   .empty {{ color:var(--muted); font-style:italic; }}
   table.cooc {{ border-collapse:collapse; font-size:12px; }}
@@ -241,11 +300,10 @@ def build_report(df: pd.DataFrame, source_name: str) -> str:
   table.survivors th {{ background:#eef1f4; cursor:pointer; position:sticky; top:0; }}
   table.survivors tbody tr:nth-child(even) {{ background:#fafbfc; }}
   .note {{ font-size:12px; color:var(--muted); max-width:760px; }}
-  .twocol {{ display:flex; gap:32px; flex-wrap:wrap; align-items:flex-start; }}
 </style></head><body>
 
 <h1>TCE sample inspection report</h1>
-<p class="sub">source: {html.escape(source_name)} &middot; generated {generated}</p>
+<p class="sub">source: {html.escape(source_name)} &middot; sector(s): {html.escape(sectors)} &middot; generated {generated}</p>
 
 <div class="stats">
   <div class="stat"><div class="big">{n_total:,}</div><div class="lbl">TCEs</div></div>
