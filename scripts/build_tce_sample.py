@@ -1,16 +1,16 @@
 """Build the v1 TCE sample from parsed sector Parquets.
 
-Driver script that wires together the three subsystem-A pieces:
+Driver script that wires together the subsystem-A pieces plus the
+subsystem-B diagnostic flags:
 
     parsed sectors  -->  build_tce_sample  -->  tce_sample_v1.parquet
         ^                       ^
         |                       |
-    parser output       Doyle+24 enrichment
+    parser output       Doyle+24 enrichment + diagnostic flags
 
 This is a thin glue runner, not a tested module — its job is to read paths
 from configs, call the already-tested module functions, write the output,
-and print a summary. As subsystem B comes online (annotation), this driver
-will grow; for now it's a single-step build.
+and print a summary.
 
 Usage
 -----
@@ -97,15 +97,12 @@ def main() -> int:
     n_with_doyle = int(df["has_doyle_params"].sum())
     n_clean = int(df["in_clean_sample"].sum())
 
+    def _bool_count(col: str) -> int:
+        s = df[col]
+        return int(s.sum() if s.dtype == "bool" else s.fillna(False).astype(bool).sum())
+
     cut_cols = [c for c in df.columns if c.startswith("passed_")]
-    cut_summary = {
-        c: (
-            int(df[c].sum())
-            if df[c].dtype == "bool"
-            else int(df[c].fillna(False).astype(bool).sum())
-        )
-        for c in cut_cols
-    }
+    flag_cols = [c for c in df.columns if c.startswith("flag_")]
 
     print()
     print("========== TCE sample build summary ==========")
@@ -114,9 +111,25 @@ def main() -> int:
     print(f"  unique TICs:             {df['tic_id'].nunique():,}")
     print(f"  Doyle match:             {n_with_doyle:,}  ({n_with_doyle / n_total * 100:.1f}%)")
     print(f"  in_clean_sample:         {n_clean:,}  ({n_clean / n_total * 100:.1f}%)")
+
     print("  per-cut pass counts (raw, before AND):")
-    for col, n in cut_summary.items():
+    for col in cut_cols:
+        n = _bool_count(col)
         print(f"    {col:32s}  {n:>6,}  ({n / n_total * 100:.1f}%)")
+
+    if flag_cols:
+        print("  diagnostic flags (True = suspicious):")
+        for col in flag_cols:
+            n = _bool_count(col)
+            print(f"    {col:32s}  {n:>6,}  ({n / n_total * 100:.1f}%)")
+        if "any_diagnostic_flag" in df.columns:
+            n_any = _bool_count("any_diagnostic_flag")
+            n_unflagged = n_total - n_any
+            print(
+                f"    {'-> unflagged (no flags set)':32s}  "
+                f"{n_unflagged:>6,}  ({n_unflagged / n_total * 100:.1f}%)"
+            )
+
     if "run_type" in df.columns:
         print("  run_type breakdown:")
         for rt, n in df["run_type"].value_counts().items():

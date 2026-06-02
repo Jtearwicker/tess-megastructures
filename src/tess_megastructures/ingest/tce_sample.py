@@ -54,6 +54,12 @@ from typing import Any
 
 import pandas as pd
 
+from tess_megastructures.annotate.derived_metrics import add_derived_metrics
+from tess_megastructures.annotate.diagnostics import (
+    add_any_flag_column,
+    add_diagnostic_flags,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -248,7 +254,8 @@ def build_tce_sample(
     """Build the v1 TCE sample from parsed sector Parquets.
 
     Steps: aggregate -> classify run type -> enrich with Doyle+24 ->
-    apply cuts -> add provenance -> (optionally) write Parquet.
+    add diagnostic flags -> apply cuts -> add provenance ->
+    (optionally) write Parquet.
 
     Parameters
     ----------
@@ -275,6 +282,16 @@ def build_tce_sample(
 
     df = classify_run_type(df)
     df = enrich_with_doyle(df, doyle)
+
+    # Subsystem B: derived diagnostic metrics + boolean flags
+    # (True = suspicious). Thresholds come from the `diagnostics` block of
+    # the config; missing keys fall back to module defaults. Rows are
+    # never dropped.
+    diag_cfg = config.get("diagnostics", {})
+    df = add_derived_metrics(df, period_match_tol_days=diag_cfg.get("period_match_tol_days", 0.01))
+    df = add_diagnostic_flags(df, diag_cfg)
+    df = add_any_flag_column(df)
+
     df = apply_cuts(df, config)
 
     # Provenance.
