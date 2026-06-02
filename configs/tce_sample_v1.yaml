@@ -62,5 +62,21 @@ required_for_clean:
   - passed_log_g_cut
   - has_valid_stellar_params
 
+# ---------------------------------------------------------------------------
+# Diagnostic flag thresholds (Subsystem B).
+# Add this block to configs/tce_sample_v1.yaml (or a new configs/diagnostics_v1.yaml).
+# These are Isabel's inherited values -- placeholders pending science calibration.
+# Every diagnostic is a boolean flag (True = suspicious); rows are never dropped.
+# ---------------------------------------------------------------------------
+diagnostics:
+  ghost_ratio_min: 1.0            # ghost_diagnostic_ratio < this -> background/blended EB
+  centroid_offset_max_sigma: 3.0  # both aperture offsets >= this -> off-target source
+  odd_even_sig_max: 35.0          # odd_even_depth_sig > this -> likely EB
+  snr_min: 20.0                   # model_fit_snr < this -> low S/N
+  reduced_chisq_min: 1.1          # model_chi_square_reduced < this -> well-fit (less anomalous)
+  odd_even_invalid_sentinel: -1   # odd_even_depth_significance == this -> invalid (DV sentinel)
+  period_match_tol_days: 0.01     # TCEs on a TIC within this period -> matching-period signal
+
+
 output:
   filename: "tce_sample_v1.parquet"
