@@ -106,48 +106,106 @@ def _bar(label: str, value: int, total: int, color: str = "#3c7d4e") -> str:
 
 
 def _histogram_svg(values: pd.Series, title: str, bins: int = 30, log_x: bool = False) -> str:
-    """Tiny inline-SVG histogram. log_x bins on log10 scale for skewed data."""
+    """Inline-SVG histogram with labelled x and y axes.
+
+    log_x bins on a log10 scale (for skewed data) but labels the x-axis with
+    real data values, not log10 values.
+    """
+    import numpy as np
+
     v = pd.to_numeric(values, errors="coerce").dropna()
     if v.empty:
         return f"<div class='hist'><div class='htitle'>{html.escape(title)}</div><div class='empty'>no data</div></div>"
+
     plot_v = v.copy()
     if log_x:
         plot_v = plot_v[plot_v > 0]
         if plot_v.empty:
             return f"<div class='hist'><div class='htitle'>{html.escape(title)}</div><div class='empty'>no positive data</div></div>"
-        import numpy as np
-
         plot_v = np.log10(plot_v)
+
     counts, edges = pd.cut(plot_v, bins=bins, retbins=True)
     hist = counts.value_counts(sort=False).to_numpy()
-    maxc = hist.max() if hist.max() > 0 else 1
-    w, h, pad = 360, 130, 4
-    bw = (w - 2 * pad) / len(hist)
+    maxc = int(hist.max()) if hist.max() > 0 else 1
+
+    # Canvas + plot area (room for axes).
+    w, h = 560, 300
+    ml, mr, mt, mb = 56, 12, 10, 40  # margins: left (y labels), right, top, bottom (x labels)
+    pw = w - ml - mr  # plot width
+    ph = h - mt - mb  # plot height
+    bw = pw / len(hist)
+
+    def fmt(x: float) -> str:
+        ax = abs(x)
+        if ax != 0 and (ax >= 1e4 or ax < 1e-2):
+            return f"{x:.1e}"
+        if ax >= 100:
+            return f"{x:,.0f}"
+        if ax >= 1:
+            return f"{x:.1f}"
+        return f"{x:.2g}"
+
+    # Bars.
     bars = []
     for i, c in enumerate(hist):
-        bh = (c / maxc) * (h - 24)
-        x = pad + i * bw
-        y = h - 18 - bh
+        bh = (c / maxc) * ph
+        x = ml + i * bw
+        y = mt + ph - bh
         bars.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{max(bw - 1, 0.5):.1f}" '
             f'height="{bh:.1f}" fill="#5a8aa8"/>'
         )
 
-    # Summary statistics (on the original, non-logged values).
-    med = v.median()
-    mean = v.mean()
-    lo = v.min()
-    hi = v.max()
-    scale_note = " &middot; log-binned" if log_x else ""
-    stats = (
-        f"median {med:,.4g} &middot; mean {mean:,.4g} &middot; min {lo:,.4g} &middot; max {hi:,.4g}"
+    # Axis lines.
+    axes = (
+        f'<line x1="{ml}" y1="{mt}" x2="{ml}" y2="{mt + ph}" stroke="#9aa7b4" stroke-width="1"/>'
+        f'<line x1="{ml}" y1="{mt + ph}" x2="{ml + pw}" y2="{mt + ph}" stroke="#9aa7b4" stroke-width="1"/>'
     )
+
+    # Y-axis ticks (0, mid, max counts).
+    yticks = []
+    for frac in (0.0, 0.5, 1.0):
+        cval = int(round(maxc * frac))
+        ty = mt + ph - frac * ph
+        yticks.append(
+            f'<line x1="{ml - 4}" y1="{ty:.1f}" x2="{ml}" y2="{ty:.1f}" stroke="#9aa7b4" stroke-width="1"/>'
+            f'<text x="{ml - 7}" y="{ty + 3:.1f}" text-anchor="end" class="tick">{cval:,}</text>'
+        )
+
+    # X-axis ticks: 5 positions across the binned range, labelled with real values.
+    xticks = []
+    lo_edge, hi_edge = edges[0], edges[-1]
+    for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+        edge_val = lo_edge + frac * (hi_edge - lo_edge)
+        real_val = (10**edge_val) if log_x else edge_val
+        tx = ml + frac * pw
+        xticks.append(
+            f'<line x1="{tx:.1f}" y1="{mt + ph}" x2="{tx:.1f}" y2="{mt + ph + 4}" stroke="#9aa7b4" stroke-width="1"/>'
+            f'<text x="{tx:.1f}" y="{mt + ph + 16:.1f}" text-anchor="middle" class="tick">{fmt(real_val)}</text>'
+        )
+
+    axis_note = " (log scale)" if log_x else ""
+    xaxis_label = (
+        f'<text x="{ml + pw / 2:.1f}" y="{h - 2}" text-anchor="middle" '
+        f'class="axislabel">value{axis_note}</text>'
+    )
+    yaxis_label = (
+        f'<text x="12" y="{mt + ph / 2:.1f}" text-anchor="middle" class="axislabel" '
+        f'transform="rotate(-90 12 {mt + ph / 2:.1f})">count</text>'
+    )
+
     return f"""
     <div class="hist">
       <div class="htitle">{html.escape(title)}</div>
-      <svg viewBox="0 0 {w} {h}" class="histsvg">{"".join(bars)}</svg>
-      <div class="hstats">{stats}</div>
-      <div class="hsub">n={len(v):,}{scale_note}</div>
+      <svg viewBox="0 0 {w} {h}" class="histsvg">
+        {"".join(bars)}
+        {axes}
+        {"".join(yticks)}
+        {"".join(xticks)}
+        {xaxis_label}
+        {yaxis_label}
+      </svg>
+      <div class="hsub">n={len(v):,} &middot; median {v.median():,.4g} &middot; range {v.min():,.4g} to {v.max():,.4g}</div>
     </div>"""
 
 
@@ -282,12 +340,14 @@ def build_report(df: pd.DataFrame, source_name: str) -> str:
   .twocol > div {{ flex:1 1 540px; min-width:480px; }}
   .twocol .rlabel {{ width:210px; }}
   .twocol .rval {{ width:110px; }}
-  .hists {{ display:flex; flex-wrap:wrap; gap:18px; }}
-  .hist {{ background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }}
-  .htitle {{ font-size:13px; font-weight:600; margin-bottom:4px; }}
-  .histsvg {{ width:360px; height:130px; }}
+  .hists {{ display:flex; flex-wrap:wrap; gap:20px; }}
+  .hist {{ background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }}
+  .htitle {{ font-size:14px; font-weight:600; margin-bottom:6px; }}
+  .histsvg {{ width:560px; height:300px; max-width:100%; }}
+  .tick {{ font-size:11px; fill:var(--muted); }}
+  .axislabel {{ font-size:11px; fill:var(--muted); }}
   .hstats {{ font-size:11px; color:var(--ink); margin-top:2px; }}
-  .hsub {{ font-size:11px; color:var(--muted); }}
+  .hsub {{ font-size:12px; color:var(--muted); margin-top:4px; }}
   .empty {{ color:var(--muted); font-style:italic; }}
   table.cooc {{ border-collapse:collapse; font-size:12px; }}
   table.cooc td, table.cooc th {{ border:1px solid var(--line); padding:4px 7px; text-align:center; }}
