@@ -69,7 +69,7 @@ def _sector_str(df: pd.DataFrame) -> str:
 
 
 def mast_dvr_url(tic_id, sector) -> str | None:
-    """Build the public MAST full DV report (dvr.pdf) URL for a TIC + sector.
+    """Build the public MAST DV mini-report (dvm.pdf) URL for a TIC + sector.
 
     Returns None if tic_id or sector is missing/unparseable (e.g. an
     aggregated multi-sector row where the single sector is ambiguous), so the
@@ -83,7 +83,7 @@ def mast_dvr_url(tic_id, sector) -> str | None:
     ticz = f"{tic_int:016d}"
     seg = "/".join(ticz[i : i + 4] for i in range(0, 16, 4))
     s = f"s{sec_int:04d}"
-    fn = f"hlsp_tess-spoc_tess_phot_{ticz}-{s}-{s}_tess_v1_dvr.pdf"
+    fn = f"hlsp_tess-spoc_tess_phot_{ticz}-{s}-{s}_tess_v1_dvm.pdf"
     return (
         "https://mast.stsci.edu/api/v0.1/Download/file/"
         f"?uri=mast:HLSP/tess-spoc/{s}/target/{seg}/{fn}"
@@ -300,8 +300,8 @@ def _survivor_table(df: pd.DataFrame) -> str:
       <tbody>{"".join(body_rows)}</tbody>
     </table>
     <p class="note">{len(unflagged):,} unflagged TCEs (tripped no diagnostic).
-    Click a column header to sort. "DV report" links open the full TESS-SPOC
-    Data Validation report (dvr.pdf) on MAST in a new tab.</p>"""
+    Click a column header to sort. "DV report" links open the TESS-SPOC
+    Data Validation mini-report (dvm.pdf) on MAST in a new tab.</p>"""
 
 
 def build_report(df: pd.DataFrame, source_name: str) -> str:
