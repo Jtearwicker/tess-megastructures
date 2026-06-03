@@ -127,9 +127,7 @@ def _bar(label: str, value: int, total: int, color: str = "#3c7d4e") -> str:
     </div>"""
 
 
-def _histogram_svg(
-    values: pd.Series, title: str, bins: int = 30, log_x: bool = False
-) -> str:
+def _histogram_svg(values: pd.Series, title: str, bins: int = 30, log_x: bool = False) -> str:
     """Inline-SVG histogram with labelled x and y axes.
 
     log_x bins on a log10 scale (for skewed data) but labels the x-axis with
@@ -253,9 +251,7 @@ def _cooccurrence_table(df: pd.DataFrame, flag_cols: list[str]) -> str:
                 frac = both / base
                 shade = f"background:rgba(90,138,168,{frac:.2f})"
                 cells.append(f"<td style='{shade}'>{both:,}</td>")
-        rows.append(
-            f"<tr><th class='rowlab'>{html.escape(short[i])}</th>{''.join(cells)}</tr>"
-        )
+        rows.append(f"<tr><th class='rowlab'>{html.escape(short[i])}</th>{''.join(cells)}</tr>")
     return f"""
     <table class="cooc">
       <tr><th></th>{header}</tr>
@@ -323,17 +319,11 @@ def build_report(df: pd.DataFrame, source_name: str) -> str:
     funnel += _bar("Unflagged survivors", n_unflagged, n_total, "#3c7d4e")
 
     # --- per-flag bars (sorted desc)
-    flag_counts = sorted(
-        ((c, _bool_count(df, c)) for c in flag_cols), key=lambda x: -x[1]
-    )
-    flag_bars = "".join(
-        _bar(_flag_label(c), n, n_total, "#c0712e") for c, n in flag_counts
-    )
+    flag_counts = sorted(((c, _bool_count(df, c)) for c in flag_cols), key=lambda x: -x[1])
+    flag_bars = "".join(_bar(_flag_label(c), n, n_total, "#c0712e") for c, n in flag_counts)
 
     # --- stellar cut bars
-    cut_bars = "".join(
-        _bar(_cut_label(c), _bool_count(df, c), n_total) for c in cut_cols
-    )
+    cut_bars = "".join(_bar(_cut_label(c), _bool_count(df, c), n_total) for c in cut_cols)
 
     # --- distributions
     hists = ""
