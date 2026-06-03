@@ -68,6 +68,28 @@ def _sector_str(df: pd.DataFrame) -> str:
     return ", ".join(f"s{s:04d}" for s in secs)
 
 
+def mast_dvr_url(tic_id, sector) -> str | None:
+    """Build the public MAST full DV report (dvr.pdf) URL for a TIC + sector.
+
+    Returns None if tic_id or sector is missing/unparseable (e.g. an
+    aggregated multi-sector row where the single sector is ambiguous), so the
+    caller can omit the link rather than emit a broken URL.
+    """
+    try:
+        tic_int = int(tic_id)
+        sec_int = int(sector)
+    except (TypeError, ValueError):
+        return None
+    ticz = f"{tic_int:016d}"
+    seg = "/".join(ticz[i : i + 4] for i in range(0, 16, 4))
+    s = f"s{sec_int:04d}"
+    fn = f"hlsp_tess-spoc_tess_phot_{ticz}-{s}-{s}_tess_v1_dvr.pdf"
+    return (
+        "https://mast.stsci.edu/api/v0.1/Download/file/"
+        f"?uri=mast:HLSP/tess-spoc/{s}/target/{seg}/{fn}"
+    )
+
+
 # Columns shown in the survivor table, if present.
 SURVIVOR_COLUMNS = [
     "tic_id",
@@ -105,7 +127,9 @@ def _bar(label: str, value: int, total: int, color: str = "#3c7d4e") -> str:
     </div>"""
 
 
-def _histogram_svg(values: pd.Series, title: str, bins: int = 30, log_x: bool = False) -> str:
+def _histogram_svg(
+    values: pd.Series, title: str, bins: int = 30, log_x: bool = False
+) -> str:
     """Inline-SVG histogram with labelled x and y axes.
 
     log_x bins on a log10 scale (for skewed data) but labels the x-axis with
@@ -229,7 +253,9 @@ def _cooccurrence_table(df: pd.DataFrame, flag_cols: list[str]) -> str:
                 frac = both / base
                 shade = f"background:rgba(90,138,168,{frac:.2f})"
                 cells.append(f"<td style='{shade}'>{both:,}</td>")
-        rows.append(f"<tr><th class='rowlab'>{html.escape(short[i])}</th>{''.join(cells)}</tr>")
+        rows.append(
+            f"<tr><th class='rowlab'>{html.escape(short[i])}</th>{''.join(cells)}</tr>"
+        )
     return f"""
     <table class="cooc">
       <tr><th></th>{header}</tr>
@@ -249,9 +275,12 @@ def _survivor_table(df: pd.DataFrame) -> str:
     cols = [c for c in SURVIVOR_COLUMNS if c in unflagged.columns]
     if unflagged.empty or not cols:
         return "<p class='empty'>No unflagged survivors (or no displayable columns).</p>"
+    can_link = {"tic_id", "sector"}.issubset(unflagged.columns)
     head = "".join(f"<th>{html.escape(c)}</th>" for c in cols)
+    if can_link:
+        head += "<th>DV report</th>"
     body_rows = []
-    for _, r in unflagged[cols].iterrows():
+    for _, r in unflagged.iterrows():
         cells = []
         for c in cols:
             val = r[c]
@@ -259,6 +288,15 @@ def _survivor_table(df: pd.DataFrame) -> str:
                 cells.append(f"<td>{val:,.4g}</td>")
             else:
                 cells.append(f"<td>{html.escape(str(val))}</td>")
+        if can_link:
+            url = mast_dvr_url(r.get("tic_id"), r.get("sector"))
+            if url:
+                cells.append(
+                    f'<td><a href="{html.escape(url)}" target="_blank" '
+                    f'rel="noopener noreferrer">PDF</a></td>'
+                )
+            else:
+                cells.append("<td>&mdash;</td>")
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
     return f"""
     <table class="survivors" id="survivors">
@@ -266,7 +304,8 @@ def _survivor_table(df: pd.DataFrame) -> str:
       <tbody>{"".join(body_rows)}</tbody>
     </table>
     <p class="note">{len(unflagged):,} unflagged TCEs (tripped no diagnostic).
-    Click a column header to sort.</p>"""
+    Click a column header to sort. "DV report" links open the full TESS-SPOC
+    Data Validation report (dvr.pdf) on MAST in a new tab.</p>"""
 
 
 def build_report(df: pd.DataFrame, source_name: str) -> str:
@@ -284,11 +323,17 @@ def build_report(df: pd.DataFrame, source_name: str) -> str:
     funnel += _bar("Unflagged survivors", n_unflagged, n_total, "#3c7d4e")
 
     # --- per-flag bars (sorted desc)
-    flag_counts = sorted(((c, _bool_count(df, c)) for c in flag_cols), key=lambda x: -x[1])
-    flag_bars = "".join(_bar(_flag_label(c), n, n_total, "#c0712e") for c, n in flag_counts)
+    flag_counts = sorted(
+        ((c, _bool_count(df, c)) for c in flag_cols), key=lambda x: -x[1]
+    )
+    flag_bars = "".join(
+        _bar(_flag_label(c), n, n_total, "#c0712e") for c, n in flag_counts
+    )
 
     # --- stellar cut bars
-    cut_bars = "".join(_bar(_cut_label(c), _bool_count(df, c), n_total) for c in cut_cols)
+    cut_bars = "".join(
+        _bar(_cut_label(c), _bool_count(df, c), n_total) for c in cut_cols
+    )
 
     # --- distributions
     hists = ""
