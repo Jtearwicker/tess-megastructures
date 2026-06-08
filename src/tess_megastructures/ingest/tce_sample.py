@@ -54,8 +54,13 @@ from typing import Any
 
 import pandas as pd
 
+from tess_megastructures.annotate.catalog_xmatch import (
+    CATALOG_EB_FLAG,
+    add_catalog_flags,
+)
 from tess_megastructures.annotate.derived_metrics import add_derived_metrics
 from tess_megastructures.annotate.diagnostics import (
+    DIAGNOSTIC_FLAG_COLUMNS,
     add_any_flag_column,
     add_diagnostic_flags,
 )
@@ -250,6 +255,9 @@ def build_tce_sample(
     config: dict[str, Any],
     output_path: Path | None = None,
     doyle: pd.DataFrame | None = None,
+    prsa: pd.DataFrame | None = None,
+    kostov_vetted: pd.DataFrame | None = None,
+    kostov_unvetted: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the v1 TCE sample from parsed sector Parquets.
 
@@ -290,7 +298,23 @@ def build_tce_sample(
     diag_cfg = config.get("diagnostics", {})
     df = add_derived_metrics(df, period_match_tol_days=diag_cfg.get("period_match_tol_days", 0.01))
     df = add_diagnostic_flags(df, diag_cfg)
-    df = add_any_flag_column(df)
+
+    # Catalog cross-match (option b: decoupled). Adds vetted-EB flags
+    # (flag_prsa_eb, flag_kostov_eb, flag_catalog_eb) and the unvetted
+    # annotation (annotation_kostov_candidate). The build orchestrates the
+    # gating flag list rather than coupling diagnostics.py to the catalogs.
+    df = add_catalog_flags(
+        df,
+        prsa=prsa,
+        kostov_vetted=kostov_vetted,
+        kostov_unvetted=kostov_unvetted,
+    )
+
+    # any_diagnostic_flag gates over DV diagnostics + the combined vetted-EB
+    # catalog flag. Per-source catalog flags (flag_prsa_eb/flag_kostov_eb) are
+    # for the dashboard only and intentionally NOT in the gating list.
+    gating_flags = DIAGNOSTIC_FLAG_COLUMNS + [CATALOG_EB_FLAG]
+    df = add_any_flag_column(df, flag_columns=gating_flags)
 
     df = apply_cuts(df, config)
 

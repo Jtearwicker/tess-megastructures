@@ -31,6 +31,13 @@ from pathlib import Path
 import yaml
 
 from tess_megastructures.catalogs.doyle2024 import load_doyle2024
+from tess_megastructures.catalogs.kostov2025 import (
+    load as load_kostov2025_vetted,
+)
+from tess_megastructures.catalogs.kostov2025 import (
+    load_unvetted as load_kostov2025_unvetted,
+)
+from tess_megastructures.catalogs.prsa2022 import load as load_prsa2022
 from tess_megastructures.ingest.tce_sample import (
     build_tce_sample,
     find_parsed_sectors,
@@ -76,6 +83,28 @@ def main() -> int:
     doyle = load_doyle2024(doyle_path)
     logger.info("Doyle catalog: %d targets", len(doyle))
 
+    # --- EB catalogs for cross-match (graceful: None if path unset/missing)
+    def _maybe_load(key, loader, label):
+        fp = paths.get(key)
+        if not fp or str(fp).startswith("/path/to"):
+            logger.warning("%s path not set in paths.yaml (%s); skipping", label, key)
+            return None
+        try:
+            df_cat = loader(Path(fp))
+            logger.info("%s: %d rows", label, len(df_cat))
+            return df_cat
+        except FileNotFoundError:
+            logger.warning("%s file not found at %s; skipping", label, fp)
+            return None
+
+    prsa = _maybe_load("prsa2022_catalog", load_prsa2022, "Prsa+2022")
+    kostov_vetted = _maybe_load(
+        "kostov2025_vetted_catalog", load_kostov2025_vetted, "Kostov+2025 vetted"
+    )
+    kostov_unvetted = _maybe_load(
+        "kostov2025_unvetted_catalog", load_kostov2025_unvetted, "Kostov+2025 unvetted"
+    )
+
     # --- build the TCE sample
     output_filename = sample_config.get("output", {}).get("filename", "tce_sample_v1.parquet")
     output_path = output_dir / output_filename
@@ -86,6 +115,9 @@ def main() -> int:
         config=sample_config,
         output_path=output_path,
         doyle=doyle,
+        prsa=prsa,
+        kostov_vetted=kostov_vetted,
+        kostov_unvetted=kostov_unvetted,
     )
 
     if df.empty:
