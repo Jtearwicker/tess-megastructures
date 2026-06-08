@@ -35,7 +35,6 @@ FLAG_LABELS = {
     "flag_matching_period": "Matching-period signals",
     "flag_large_odd_even": "Large odd/even depth difference",
     "flag_low_snr": "Low S/N",
-    "flag_low_rchisq": "Low reduced chi-squared",
 }
 
 # Human-readable labels for the stellar cuts.

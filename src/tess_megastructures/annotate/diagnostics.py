@@ -26,8 +26,9 @@ Flags produced
 - flag_matching_period    TIC has matching-period signals (likely EB)
 - flag_large_odd_even     odd_even_depth_sig > odd_even_sig_max (likely EB)
 - flag_low_snr            model_fit_snr < snr_min
-- flag_low_rchisq         model_chi_square_reduced < reduced_chisq_min
-                          (well-fit by the transit model -> less anomalous)
+- annotation_low_rchisq   model_chi_square_reduced < reduced_chisq_min
+                          (well-fit by transit model; ANNOTATION not a flag --
+                          does not gate survivor selection, per Vishal 2026-06)
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ DEFAULT_THRESHOLDS = {
     "ghost_ratio_min": 1.0,  # ratio < this -> background/blended EB
     "centroid_offset_max_sigma": 3.0,  # offset > this (both apertures) -> off-target
     "odd_even_sig_max": 35.0,  # odd_even_depth_sig > this -> likely EB
-    "snr_min": 20.0,  # model_fit_snr < this -> low S/N
+    "snr_min": 10.0,  # model_fit_snr < this -> low S/N
     "reduced_chisq_min": 1.1,  # rchisq < this -> well-fit (less anomalous)
     "odd_even_invalid_sentinel": -1,  # odd_even significance == this -> invalid
 }
@@ -147,10 +148,16 @@ def add_diagnostic_flags(
         out["flag_low_snr"] = False
 
     # --- low reduced chi-square (well-fit by transit model -> less anomalous)
+    # NOTE: annotation, NOT a flag. Per Vishal (2026-06), rchisq must not gate
+    # candidate selection -- a clean transit fit is recorded but does not
+    # exclude a TCE from the survivor set. Hence the annotation_ prefix and
+    # absence from DIAGNOSTIC_FLAG_COLUMNS.
     if "model_chi_square_reduced" in out.columns:
-        out["flag_low_rchisq"] = _na_false(out["model_chi_square_reduced"] < t["reduced_chisq_min"])
+        out["annotation_low_rchisq"] = _na_false(
+            out["model_chi_square_reduced"] < t["reduced_chisq_min"]
+        )
     else:
-        out["flag_low_rchisq"] = False
+        out["annotation_low_rchisq"] = False
 
     return out
 
@@ -166,7 +173,6 @@ DIAGNOSTIC_FLAG_COLUMNS = [
     "flag_matching_period",
     "flag_large_odd_even",
     "flag_low_snr",
-    "flag_low_rchisq",
 ]
 
 

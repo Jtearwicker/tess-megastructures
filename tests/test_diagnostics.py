@@ -66,11 +66,11 @@ class TestIndividualFlags:
         assert bool(self._flags({"odd_even_depth_statistic": 2025.0})["flag_large_odd_even"])
 
     def test_low_snr(self):
-        assert bool(self._flags({"model_fit_snr": 10.0})["flag_low_snr"])
+        assert bool(self._flags({"model_fit_snr": 5.0})["flag_low_snr"])
 
     def test_low_rchisq(self):
         # rchisq = 50/100 = 0.5 < 1.1
-        assert bool(self._flags({"model_chi_square": 50.0})["flag_low_rchisq"])
+        assert bool(self._flags({"model_chi_square": 50.0})["annotation_low_rchisq"])
 
 
 class TestCentroidOffsetFlag:
