@@ -42,13 +42,31 @@ class TestCatalogFlags:
             kostov_vetted=_catalog([2]),
             kostov_unvetted=None,
         )
-        # combined vetted flag = prsa OR kostov
         assert bool(out.loc[out.tic_id == 1, CATALOG_EB_FLAG].item())
         assert bool(out.loc[out.tic_id == 2, CATALOG_EB_FLAG].item())
         assert not bool(out.loc[out.tic_id == 3, CATALOG_EB_FLAG].item())
 
+    def test_oddo_membership_sets_flag(self):
+        # Oddo vetted membership sets flag_oddo_eb and folds into flag_catalog_eb.
+        df = _sample([10, 20])
+        out = add_catalog_flags(df, oddo=_catalog([10]))
+        assert bool(out.loc[out.tic_id == 10, "flag_oddo_eb"].item())
+        assert bool(out.loc[out.tic_id == 10, CATALOG_EB_FLAG].item())
+        assert not bool(out.loc[out.tic_id == 20, CATALOG_EB_FLAG].item())
+
+    def test_combined_flag_is_three_way_union(self):
+        df = _sample([1, 2, 3, 4])
+        out = add_catalog_flags(
+            df,
+            prsa=_catalog([1]),
+            kostov_vetted=_catalog([2]),
+            oddo=_catalog([3]),
+        )
+        for tic in (1, 2, 3):
+            assert bool(out.loc[out.tic_id == tic, CATALOG_EB_FLAG].item())
+        assert not bool(out.loc[out.tic_id == 4, CATALOG_EB_FLAG].item())
+
     def test_unvetted_is_annotation_not_flag(self):
-        # A TIC ONLY in the unvetted list must be annotated but NOT flagged.
         df = _sample([700])
         out = add_catalog_flags(
             df,
@@ -58,16 +76,15 @@ class TestCatalogFlags:
         )
         assert bool(out.loc[out.tic_id == 700, "annotation_kostov_candidate"].item())
         assert not bool(out.loc[out.tic_id == 700, CATALOG_EB_FLAG].item())
-        # annotation must not be a flag_ column (won't enter any_diagnostic_flag)
         assert "annotation_kostov_candidate".startswith("annotation_")
 
     def test_missing_catalog_degrades_gracefully(self):
-        # All catalogs None -> all flags False, no crash, rows preserved.
         df = _sample([1, 2, 3])
-        out = add_catalog_flags(df, prsa=None, kostov_vetted=None, kostov_unvetted=None)
+        out = add_catalog_flags(df, prsa=None, kostov_vetted=None, kostov_unvetted=None, oddo=None)
         assert len(out) == 3
         assert out["flag_prsa_eb"].sum() == 0
         assert out["flag_kostov_eb"].sum() == 0
+        assert out["flag_oddo_eb"].sum() == 0
         assert out[CATALOG_EB_FLAG].sum() == 0
         assert out["annotation_kostov_candidate"].sum() == 0
 

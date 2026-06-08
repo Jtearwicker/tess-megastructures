@@ -37,6 +37,7 @@ from tess_megastructures.catalogs.kostov2025 import (
 from tess_megastructures.catalogs.kostov2025 import (
     load_unvetted as load_kostov2025_unvetted,
 )
+from tess_megastructures.catalogs.oddo2025 import load as load_oddo2025
 from tess_megastructures.catalogs.prsa2022 import load as load_prsa2022
 from tess_megastructures.ingest.tce_sample import (
     build_tce_sample,
@@ -104,6 +105,7 @@ def main() -> int:
     kostov_unvetted = _maybe_load(
         "kostov2025_unvetted_catalog", load_kostov2025_unvetted, "Kostov+2025 unvetted"
     )
+    oddo = _maybe_load("oddo2025_catalog", load_oddo2025, "Oddo+2025")
 
     # --- build the TCE sample
     output_filename = sample_config.get("output", {}).get("filename", "tce_sample_v1.parquet")
@@ -118,6 +120,7 @@ def main() -> int:
         prsa=prsa,
         kostov_vetted=kostov_vetted,
         kostov_unvetted=kostov_unvetted,
+        oddo=oddo,
     )
 
     if df.empty:

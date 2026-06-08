@@ -250,6 +250,34 @@ def apply_cuts(df: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
 # -------------------------------------------------------------------------
 
 
+def _write_parquet_with_thresholds(
+    df: pd.DataFrame, output_path: Path, config: dict[str, Any]
+) -> None:
+    """Write the sample to Parquet, embedding threshold config as metadata.
+
+    Stores the ``diagnostics`` and ``stellar_cuts`` config blocks in the
+    Parquet schema metadata under ``tess_megastructures_thresholds`` (JSON).
+    This lets the dashboard label flags/cuts with the *actual* thresholds used
+    for this sample, with no risk of config drift. Normal pandas reads ignore
+    the metadata; readers that want it use pyarrow ``read_schema``.
+    """
+    import json
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    existing = table.schema.metadata or {}
+    payload = {
+        "diagnostics": config.get("diagnostics", {}),
+        "stellar_cuts": config.get("stellar_cuts", {}),
+    }
+    custom = {b"tess_megastructures_thresholds": json.dumps(payload).encode("utf-8")}
+    table = table.replace_schema_metadata({**existing, **custom})
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, output_path)
+
+
 def build_tce_sample(
     parsed_paths: list[Path],
     config: dict[str, Any],
@@ -258,6 +286,7 @@ def build_tce_sample(
     prsa: pd.DataFrame | None = None,
     kostov_vetted: pd.DataFrame | None = None,
     kostov_unvetted: pd.DataFrame | None = None,
+    oddo: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the v1 TCE sample from parsed sector Parquets.
 
@@ -308,6 +337,7 @@ def build_tce_sample(
         prsa=prsa,
         kostov_vetted=kostov_vetted,
         kostov_unvetted=kostov_unvetted,
+        oddo=oddo,
     )
 
     # any_diagnostic_flag gates over DV diagnostics + the combined vetted-EB
@@ -326,8 +356,7 @@ def build_tce_sample(
     df["built_at"] = dt.datetime.now(dt.UTC).isoformat()
 
     if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(output_path, index=False)
+        _write_parquet_with_thresholds(df, output_path, config)
         logger.info(
             "Wrote TCE sample: %d rows, %d in clean sample -> %s",
             len(df),
