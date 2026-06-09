@@ -288,6 +288,89 @@ def _histogram_svg(values: pd.Series, title: str, bins: int = 30, log_x: bool = 
     </div>"""
 
 
+def _scatter_svg(
+    x: pd.Series,
+    y: pd.Series,
+    title: str,
+    x_label: str,
+    y_label: str,
+    log_x: bool = False,
+    log_y: bool = False,
+) -> str:
+    """Small SVG scatter plot. Used for ExoMiner score vs reduced chi-squared."""
+    import numpy as np
+
+    xv = pd.to_numeric(x, errors="coerce")
+    yv = pd.to_numeric(y, errors="coerce")
+    mask = xv.notna() & yv.notna()
+    if log_x:
+        mask &= xv > 0
+    if log_y:
+        mask &= yv > 0
+    xv, yv = xv[mask], yv[mask]
+    if xv.empty:
+        return f"<div class='hist'><div class='htitle'>{html.escape(title)}</div><div class='empty'>no data</div></div>"
+    px = np.log10(xv) if log_x else xv.to_numpy(dtype=float)
+    py = np.log10(yv) if log_y else yv.to_numpy(dtype=float)
+    w, h = 560, 360
+    ml, mr, mt, mb = 60, 14, 12, 46
+    pw, ph = w - ml - mr, h - mt - mb
+    xlo, xhi = float(px.min()), float(px.max())
+    ylo, yhi = float(py.min()), float(py.max())
+    xrng = (xhi - xlo) or 1.0
+    yrng = (yhi - ylo) or 1.0
+
+    def sx(v):
+        return ml + (v - xlo) / xrng * pw
+
+    def sy(v):
+        return mt + ph - (v - ylo) / yrng * ph
+
+    dots = "".join(
+        f'<circle cx="{sx(px[i]):.1f}" cy="{sy(py[i]):.1f}" r="2.4" fill="#5a8aa8" fill-opacity="0.55"/>'
+        for i in range(len(px))
+    )
+    axes = (
+        f'<line x1="{ml}" y1="{mt}" x2="{ml}" y2="{mt + ph}" stroke="#9aa7b4"/>'
+        f'<line x1="{ml}" y1="{mt + ph}" x2="{ml + pw}" y2="{mt + ph}" stroke="#9aa7b4"/>'
+    )
+
+    def fmt(v, is_log):
+        real = 10**v if is_log else v
+        a = abs(real)
+        if a != 0 and (a >= 1e4 or a < 1e-2):
+            return f"{real:.0e}"
+        if a >= 100:
+            return f"{real:,.0f}"
+        if a >= 1:
+            return f"{real:.1f}"
+        return f"{real:.2g}"
+
+    ticks = ""
+    for frac in (0.0, 0.5, 1.0):
+        xt = ml + frac * pw
+        ticks += (
+            f'<line x1="{xt:.1f}" y1="{mt + ph}" x2="{xt:.1f}" y2="{mt + ph + 4}" stroke="#9aa7b4"/>'
+            f'<text x="{xt:.1f}" y="{mt + ph + 16:.1f}" text-anchor="middle" class="tick">{fmt(xlo + frac * xrng, log_x)}</text>'
+        )
+        yt = mt + ph - frac * ph
+        ticks += (
+            f'<line x1="{ml - 4}" y1="{yt:.1f}" x2="{ml}" y2="{yt:.1f}" stroke="#9aa7b4"/>'
+            f'<text x="{ml - 7}" y="{yt + 3:.1f}" text-anchor="end" class="tick">{fmt(ylo + frac * yrng, log_y)}</text>'
+        )
+    xlab = f'<text x="{ml + pw / 2:.1f}" y="{h - 4}" text-anchor="middle" class="axislabel">{html.escape(x_label)}{" (log)" if log_x else ""}</text>'
+    ylab = (
+        f'<text x="14" y="{mt + ph / 2:.1f}" text-anchor="middle" class="axislabel" '
+        f'transform="rotate(-90 14 {mt + ph / 2:.1f})">{html.escape(y_label)}{" (log)" if log_y else ""}</text>'
+    )
+    return f"""
+    <div class="hist">
+      <div class="htitle">{html.escape(title)}</div>
+      <svg viewBox="0 0 {w} {h}" class="histsvg">{dots}{axes}{ticks}{xlab}{ylab}</svg>
+      <div class="hsub">n={len(px):,}</div>
+    </div>"""
+
+
 def _cooccurrence_table(df: pd.DataFrame, flag_cols: list[str]) -> str:
     if not flag_cols:
         return "<p class='empty'>No flag columns found.</p>"
@@ -366,7 +449,105 @@ def _survivor_table(df: pd.DataFrame) -> str:
     (dvm.pdf) on MAST in a new tab.{note_annot}</p>"""
 
 
-def build_report(df: pd.DataFrame, source_name: str, thresholds: dict) -> str:
+def _exominer_section(df: pd.DataFrame, scores: pd.DataFrame | None) -> str:
+    """Render the ExoMiner-scores section, or empty string if no scores given.
+
+    Cautious framing: scores are shown as a DIAGNOSTIC (distributions + the
+    score-vs-reduced-chisq plot + a scored table), NOT as an anomaly ranking.
+    The low-score tail is enriched in missed EBs / variables, not necessarily
+    anomalies, so the dashboard does not present a "top candidates" leaderboard.
+    """
+    if scores is None or scores.empty:
+        return ""
+    if "score" not in scores.columns:
+        return ""
+
+    n_scored = int(scores["score"].notna().sum())
+    n_surv = (
+        int((~df["any_diagnostic_flag"].fillna(False).astype(bool)).sum())
+        if "any_diagnostic_flag" in df.columns
+        else len(scores)
+    )
+
+    # distributions
+    hist_score = _histogram_svg(scores["score"], "ExoMiner score", log_x=True)
+    hist_z = (
+        _histogram_svg(scores["median_z_score"], "Median z-score", log_x=False)
+        if "median_z_score" in scores.columns
+        else ""
+    )
+    # Task A: score vs reduced chi-squared
+    scatter = (
+        _scatter_svg(
+            scores["score"],
+            scores["model_chi_square_reduced"],
+            "ExoMiner score vs reduced chi-squared",
+            "ExoMiner score",
+            "reduced chi-squared",
+            log_x=True,
+            log_y=True,
+        )
+        if "model_chi_square_reduced" in scores.columns
+        else ""
+    )
+
+    # scored table (sortable), framed as scores not ranking
+    cols = [
+        c
+        for c in [
+            "tic_id",
+            "planet_number",
+            "sector",
+            "score",
+            "median_z_score",
+            "model_chi_square_reduced",
+            "model_fit_snr",
+        ]
+        if c in scores.columns
+    ]
+    can_link = {"tic_id", "sector"}.issubset(scores.columns)
+    head = "".join(f"<th>{html.escape(c)}</th>" for c in cols)
+    if can_link:
+        head += "<th>DV report</th>"
+    rows = []
+    for _, r in scores.sort_values("score").iterrows():
+        cells = []
+        for c in cols:
+            v = r[c]
+            if isinstance(v, float):
+                cells.append(f"<td>{v:.4g}</td>")
+            else:
+                cells.append(f"<td>{html.escape(str(v))}</td>")
+        if can_link:
+            url = mast_dvr_url(r.get("tic_id"), r.get("sector"))
+            cells.append(
+                f'<td><a href="{html.escape(url)}" target="_blank" rel="noopener noreferrer">PDF</a></td>'
+                if url
+                else "<td>-</td>"
+            )
+        rows.append(f"<tr>{''.join(cells)}</tr>")
+
+    return f"""
+<h2>ExoMiner scores</h2>
+<p class="secsub">ExoMiner planet-likeness scores for the {n_scored:,} scored survivors
+(of {n_surv:,}). Shown as a diagnostic, not an anomaly ranking: a low score means
+un-planet-like, but the low-score tail is enriched in eclipsing binaries and
+variables that passed the DV diagnostics, not necessarily anomalies. Use median
+z-score and the score vs reduced chi-squared structure together, alongside manual
+vetting, rather than score alone.</p>
+<div class="hists">{hist_score}{hist_z}{scatter}</div>
+<table class="survivors" id="exominer">
+  <thead><tr>{head}</tr></thead>
+  <tbody>{"".join(rows)}</tbody>
+</table>
+<p class="note">{n_scored:,} scored survivors, ascending by ExoMiner score. Click a
+column header to sort. The lowest scores are most un-planet-like; treat the extreme
+tail as likely EBs/variables pending vetting.</p>"""
+
+
+def build_report(
+    df: pd.DataFrame, source_name: str, thresholds: dict, scores: pd.DataFrame | None = None
+) -> str:
     n_total = len(df)
     diag = thresholds.get("diagnostics", {})
     stel = thresholds.get("stellar_cuts", {})
@@ -462,6 +643,7 @@ def build_report(df: pd.DataFrame, source_name: str, thresholds: dict) -> str:
     cooc_cols = present_diag + (["flag_catalog_eb"] if "flag_catalog_eb" in df.columns else [])
     cooc = _cooccurrence_table(df, cooc_cols)
     survivors = _survivor_table(df)
+    exominer_section = _exominer_section(df, scores)
 
     n_tics = df["tic_id"].nunique() if "tic_id" in df.columns else 0
     generated = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -552,6 +734,7 @@ def build_report(df: pd.DataFrame, source_name: str, thresholds: dict) -> str:
 
 <h2>Unflagged survivors</h2>
 {survivors}
+{exominer_section}
 
 <script>
 document.querySelectorAll("table.survivors th").forEach((th, idx) => {{
@@ -578,6 +761,12 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Generate an HTML report from a TCE sample.")
     ap.add_argument("input", type=Path, help="Path to tce_sample_v1.parquet (or .csv)")
     ap.add_argument("-o", "--output", type=Path, default=None, help="Output HTML path")
+    ap.add_argument(
+        "--scores",
+        type=Path,
+        default=None,
+        help="Optional scored-survivors parquet (ExoMiner). Adds an ExoMiner scores section.",
+    )
     args = ap.parse_args(argv)
     if not args.input.is_file():
         print(f"ERROR: input not found: {args.input}")
@@ -586,10 +775,17 @@ def main(argv: list[str]) -> int:
     if df.empty:
         print("ERROR: input has no rows.")
         return 1
+    scores = None
+    if args.scores is not None:
+        if not args.scores.is_file():
+            print(f"WARNING: scores file not found, skipping: {args.scores}")
+        else:
+            scores = _read(args.scores)
     thresholds = _read_thresholds(args.input) if args.input.suffix != ".csv" else {}
     out = args.output or args.input.with_name(args.input.stem + "_dashboard.html")
-    out.write_text(build_report(df, args.input.name, thresholds), encoding="utf-8")
-    print(f"wrote {out}  ({len(df):,} TCEs)")
+    out.write_text(build_report(df, args.input.name, thresholds, scores), encoding="utf-8")
+    n_scored = f", {len(scores):,} scored" if scores is not None else ""
+    print(f"wrote {out}  ({len(df):,} TCEs{n_scored})")
     return 0
 
 
