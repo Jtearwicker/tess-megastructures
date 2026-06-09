@@ -395,7 +395,7 @@ def _cooccurrence_table(df: pd.DataFrame, flag_cols: list[str]) -> str:
     row flag's own total (diagonal).</p>"""
 
 
-def _survivor_table(df: pd.DataFrame) -> str:
+def _survivor_table(df: pd.DataFrame, scores: pd.DataFrame | None = None) -> str:
     unflagged = (
         df[~df["any_diagnostic_flag"].fillna(False).astype(bool)]
         if "any_diagnostic_flag" in df.columns
@@ -404,13 +404,41 @@ def _survivor_table(df: pd.DataFrame) -> str:
     cols = [c for c in SURVIVOR_COLUMNS if c in unflagged.columns]
     if unflagged.empty or not cols:
         return "<p class='empty'>No unflagged survivors (or no displayable columns).</p>"
+
+    # Merge ExoMiner score columns (left-join on tic_id, planet_number).
+    exo_cols = ["score", "median_z_score", "EB_score"]
+    exo_present: list[str] = []
+    unflagged = unflagged.copy()
+    if (
+        scores is not None
+        and not scores.empty
+        and {"tic_id", "planet_number"}.issubset(scores.columns)
+    ):
+        exo_present = [c for c in exo_cols if c in scores.columns]
+        if exo_present:
+            # drop any pre-existing score cols on the left to avoid _x/_y collision
+            unflagged = unflagged.drop(columns=[c for c in exo_present if c in unflagged.columns])
+            keep = ["tic_id", "planet_number", *exo_present]
+            unflagged = unflagged.merge(
+                scores[keep].drop_duplicates(subset=["tic_id", "planet_number"]),
+                on=["tic_id", "planet_number"],
+                how="left",
+            )
+            # default sort: ascending by ExoMiner score (NaN/unscored last)
+            if "score" in unflagged.columns:
+                unflagged = unflagged.sort_values("score", na_position="last")
+
     has_annot = "annotation_kostov_candidate" in unflagged.columns
     can_link = {"tic_id", "sector"}.issubset(unflagged.columns)
+
+    # headers: DV columns, then tinted ExoMiner columns, then annotation/link
     head = "".join(f"<th>{html.escape(c)}</th>" for c in cols)
+    head += "".join(f'<th class="exocol">{html.escape(c)}</th>' for c in exo_present)
     if has_annot:
         head += "<th>Kostov unvetted</th>"
     if can_link:
         head += "<th>DV report</th>"
+
     body_rows = []
     for _, r in unflagged.iterrows():
         cells = []
@@ -421,6 +449,14 @@ def _survivor_table(df: pd.DataFrame) -> str:
                 if isinstance(val, float)
                 else f"<td>{html.escape(str(val))}</td>"
             )
+        for c in exo_present:
+            val = r.get(c)
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                cells.append('<td class="exocol">-</td>')
+            elif isinstance(val, float):
+                cells.append(f'<td class="exocol">{val:.4g}</td>')
+            else:
+                cells.append(f'<td class="exocol">{html.escape(str(val))}</td>')
         if has_annot:
             is_cand = bool(r.get("annotation_kostov_candidate"))
             cells.append(f"<td>{'yes' if is_cand else '-'}</td>")
@@ -433,12 +469,23 @@ def _survivor_table(df: pd.DataFrame) -> str:
             else:
                 cells.append("<td>-</td>")
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
+
     note_annot = (
         ' The "Kostov unvetted" column marks TCEs in Kostov\'s unvetted NN '
         "candidate list (annotation only; does not affect survivor status)."
         if has_annot
         else ""
     )
+    note_exo = ""
+    if exo_present:
+        n_scored = int(unflagged["score"].notna().sum()) if "score" in unflagged.columns else 0
+        note_exo = (
+            f" Shaded columns are ExoMiner outputs ({n_scored:,} of {len(unflagged):,} "
+            "survivors scored); default sort is ascending by score. Low score = "
+            "un-planet-like, but the low-score tail is EB/variable-enriched, not "
+            "necessarily anomalous, so treat score as a diagnostic, not a ranking. "
+            "EB_score is shown for completeness but is under development."
+        )
     return f"""
     <table class="survivors" id="survivors">
       <thead><tr>{head}</tr></thead>
@@ -446,7 +493,7 @@ def _survivor_table(df: pd.DataFrame) -> str:
     </table>
     <p class="note">{len(unflagged):,} unflagged TCEs (no diagnostic and no catalog flag).
     Click a column header to sort. "DV report" links open the TESS-SPOC DV mini-report
-    (dvm.pdf) on MAST in a new tab.{note_annot}</p>"""
+    (dvm.pdf) on MAST in a new tab.{note_exo}{note_annot}</p>"""
 
 
 def _exominer_section(df: pd.DataFrame, scores: pd.DataFrame | None) -> str:
@@ -469,14 +516,14 @@ def _exominer_section(df: pd.DataFrame, scores: pd.DataFrame | None) -> str:
         else len(scores)
     )
 
-    # distributions
+    # scored-plots-only section (the scores themselves are merged into the
+    # survivor table; here we show the population-level diagnostic plots).
     hist_score = _histogram_svg(scores["score"], "ExoMiner score", log_x=True)
     hist_z = (
         _histogram_svg(scores["median_z_score"], "Median z-score", log_x=False)
         if "median_z_score" in scores.columns
         else ""
     )
-    # Task A: score vs reduced chi-squared
     scatter = (
         _scatter_svg(
             scores["score"],
@@ -491,42 +538,6 @@ def _exominer_section(df: pd.DataFrame, scores: pd.DataFrame | None) -> str:
         else ""
     )
 
-    # scored table (sortable), framed as scores not ranking
-    cols = [
-        c
-        for c in [
-            "tic_id",
-            "planet_number",
-            "sector",
-            "score",
-            "median_z_score",
-            "model_chi_square_reduced",
-            "model_fit_snr",
-        ]
-        if c in scores.columns
-    ]
-    can_link = {"tic_id", "sector"}.issubset(scores.columns)
-    head = "".join(f"<th>{html.escape(c)}</th>" for c in cols)
-    if can_link:
-        head += "<th>DV report</th>"
-    rows = []
-    for _, r in scores.sort_values("score").iterrows():
-        cells = []
-        for c in cols:
-            v = r[c]
-            if isinstance(v, float):
-                cells.append(f"<td>{v:.4g}</td>")
-            else:
-                cells.append(f"<td>{html.escape(str(v))}</td>")
-        if can_link:
-            url = mast_dvr_url(r.get("tic_id"), r.get("sector"))
-            cells.append(
-                f'<td><a href="{html.escape(url)}" target="_blank" rel="noopener noreferrer">PDF</a></td>'
-                if url
-                else "<td>-</td>"
-            )
-        rows.append(f"<tr>{''.join(cells)}</tr>")
-
     return f"""
 <h2>ExoMiner scores</h2>
 <p class="secsub">ExoMiner planet-likeness scores for the {n_scored:,} scored survivors
@@ -534,15 +545,9 @@ def _exominer_section(df: pd.DataFrame, scores: pd.DataFrame | None) -> str:
 un-planet-like, but the low-score tail is enriched in eclipsing binaries and
 variables that passed the DV diagnostics, not necessarily anomalies. Use median
 z-score and the score vs reduced chi-squared structure together, alongside manual
-vetting, rather than score alone.</p>
-<div class="hists">{hist_score}{hist_z}{scatter}</div>
-<table class="survivors" id="exominer">
-  <thead><tr>{head}</tr></thead>
-  <tbody>{"".join(rows)}</tbody>
-</table>
-<p class="note">{n_scored:,} scored survivors, ascending by ExoMiner score. Click a
-column header to sort. The lowest scores are most un-planet-like; treat the extreme
-tail as likely EBs/variables pending vetting.</p>"""
+vetting, rather than score alone. Per-candidate scores are in the survivor table
+below (shaded columns).</p>
+<div class="hists">{hist_score}{hist_z}{scatter}</div>"""
 
 
 def build_report(
@@ -642,7 +647,7 @@ def build_report(
     # co-occurrence over the gating flags (diagnostic + combined catalog)
     cooc_cols = present_diag + (["flag_catalog_eb"] if "flag_catalog_eb" in df.columns else [])
     cooc = _cooccurrence_table(df, cooc_cols)
-    survivors = _survivor_table(df)
+    survivors = _survivor_table(df, scores)
     exominer_section = _exominer_section(df, scores)
 
     n_tics = df["tic_id"].nunique() if "tic_id" in df.columns else 0
@@ -694,6 +699,9 @@ def build_report(
   table.survivors th, table.survivors td {{ border:1px solid var(--line); padding:4px 8px; text-align:right; }}
   table.survivors th {{ background:#eef1f4; cursor:pointer; position:sticky; top:0; }}
   table.survivors tbody tr:nth-child(even) {{ background:#fafbfc; }}
+  table.survivors th.exocol {{ background:#e7dff0; }}
+  table.survivors td.exocol {{ background:#f1ecf8; }}
+  table.survivors tbody tr:nth-child(even) td.exocol {{ background:#ebe4f4; }}
   .note {{ font-size:12px; color:var(--muted); max-width:860px; }}
 </style></head><body>
 
@@ -732,9 +740,10 @@ def build_report(
 <h2>Flag co-occurrence</h2>
 {cooc}
 
+{exominer_section}
+
 <h2>Unflagged survivors</h2>
 {survivors}
-{exominer_section}
 
 <script>
 document.querySelectorAll("table.survivors th").forEach((th, idx) => {{
