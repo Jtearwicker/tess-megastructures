@@ -80,3 +80,11 @@ vetting_log.sqlite-*
 
 # astroquery download working directory
 tests/fixtures/mastDownload/
+
+# generated dashboards and resolver/calibration caches
+*_dashboard_*.html
+dv_product_cache.json
+dv_links*.parquet
+toi_disp.parquet
+signals_outward.csv
+signals_*.csv
