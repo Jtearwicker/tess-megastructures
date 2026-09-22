@@ -223,15 +223,47 @@ def _extract_planet_candidate(planet_results: ET.Element) -> dict[str, Any]:
 
 
 def _extract_weak_secondary(planet_results: ET.Element) -> dict[str, Any]:
-    """Extract weakSecondary sub-element. Located under planetCandidate."""
+    """Extract the weakSecondary test (located under planetCandidate).
+
+    The weak-secondary search is one of the strongest eclipsing-binary
+    discriminators: a significant secondary eclipse flags a binary. We keep the
+    max/min MES and the phase (in days) at which each occurs, the median MES and
+    its MAD, the count of valid phases, the robust statistic, and the fitted
+    secondary depth with its uncertainty. Downstream EB features to derive from
+    these: secondary/primary depth ratio and the secondary phase (0.5 for a
+    circular orbit, shifted for eccentric). Paolo's aliases: maxMes -> tce_maxmes,
+    maxMesPhaseInDays -> tce_maxmesd, depthPpm -> wst_depth.
+    """
+    cols: dict[str, Any] = {
+        "weak_secondary_max_mes": None,
+        "weak_secondary_max_mes_phase_days": None,
+        "weak_secondary_min_mes": None,
+        "weak_secondary_min_mes_phase_days": None,
+        "weak_secondary_median_mes": None,
+        "weak_secondary_mes_mad": None,
+        "weak_secondary_n_valid_phases": None,
+        "weak_secondary_robust_statistic": None,
+        "weak_secondary_depth_ppm": None,
+        "weak_secondary_depth_ppm_err": None,
+    }
     pc = _find(planet_results, "planetCandidate")
     if pc is None:
-        return {"weak_secondary_mes_mad": None, "weak_secondary_robust_statistic": None}
+        return cols
     ws = _find(pc, "weakSecondary")
-    return {
-        "weak_secondary_mes_mad": _attr_float(ws, "mesMad"),
-        "weak_secondary_robust_statistic": _attr_float(ws, "robustStatistic"),
-    }
+    if ws is None:
+        return cols
+    cols["weak_secondary_max_mes"] = _attr_float(ws, "maxMes")
+    cols["weak_secondary_max_mes_phase_days"] = _attr_float(ws, "maxMesPhaseInDays")
+    cols["weak_secondary_min_mes"] = _attr_float(ws, "minMes")
+    cols["weak_secondary_min_mes_phase_days"] = _attr_float(ws, "minMesPhaseInDays")
+    cols["weak_secondary_median_mes"] = _attr_float(ws, "medianMes")
+    cols["weak_secondary_mes_mad"] = _attr_float(ws, "mesMad")
+    cols["weak_secondary_n_valid_phases"] = _attr_int(ws, "nValidPhases")
+    cols["weak_secondary_robust_statistic"] = _attr_float(ws, "robustStatistic")
+    cols["weak_secondary_depth_ppm"], cols["weak_secondary_depth_ppm_err"] = _value_and_uncertainty(
+        _find(ws, "depthPpm")
+    )
+    return cols
 
 
 def _extract_all_transits_fit(planet_results: ET.Element) -> dict[str, Any]:

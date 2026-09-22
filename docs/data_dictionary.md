@@ -16,7 +16,7 @@ committed expected-output fixture.
 One row per TCE (per `planetResults` element). Target-level fields
 (TIC, stellar properties, limb darkening) are duplicated across all
 TCEs from the same target. Produced by
-`src/tess_megastructures/ingest/parse.py`. 68 columns.
+`src/tess_megastructures/ingest/parse.py`. 76 columns.
 
 Column naming is snake_case; missing optional fields are null (not a
 sentinel value). See decisions.md (2026-05-13, parser schema entry).
@@ -68,6 +68,22 @@ sentinel value). See decisions.md (2026-05-13, parser schema entry).
 | `model_chi_square_dof_2` | float64 | `@modelChiSquareDof2` | DOF (model 2) |
 | `model_chi_square_gof` | float64 | `@modelChiSquareGof` | Goodness-of-fit chi-square |
 | `model_chi_square_gof_dof` | float64 | `@modelChiSquareGofDof` | GOF DOF |
+
+### weakSecondary sub-element
+
+Under `planetCandidate/weakSecondary`. SPOC's secondary-eclipse search, one of the strongest EB discriminators. Derive downstream: secondary/primary depth ratio and the secondary phase (0.5 for a circular orbit, shifted for eccentric).
+
+| Column | Type | Source | Definition |
+|---|---|---|---|
+| `weak_secondary_max_mes` | float64 | `weakSecondary@maxMes` | Max secondary MES over the phase search (Paolo: `tce_maxmes`) |
+| `weak_secondary_max_mes_phase_days` | float64 | `@maxMesPhaseInDays` | Phase (days) of the max-MES secondary (Paolo: `tce_maxmesd`) |
+| `weak_secondary_min_mes` | float64 | `@minMes` | Min secondary MES over the phase search |
+| `weak_secondary_min_mes_phase_days` | float64 | `@minMesPhaseInDays` | Phase (days) of the min-MES secondary |
+| `weak_secondary_median_mes` | float64 | `@medianMes` | Median MES across searched phases |
+| `weak_secondary_mes_mad` | float64 | `@mesMad` | MAD of MES across searched phases |
+| `weak_secondary_n_valid_phases` | int32 | `@nValidPhases` | Number of valid phases searched |
+| `weak_secondary_robust_statistic` | float64 | `@robustStatistic` | Robust weak-secondary statistic |
+| `weak_secondary_depth_ppm` (+`_err`) | float64 | `depthPpm@value` (+`@uncertainty`) | Fitted secondary depth in ppm (Paolo: `wst_depth`) |
 
 ### allTransitsFit + model parameters
 
