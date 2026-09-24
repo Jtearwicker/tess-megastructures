@@ -65,6 +65,7 @@ BUILD_SOURCES = ("build_release.py", "src/tess_megastructures/ingest/parse.py",
 
 FRONT_COLS = [
     "tic_id", "planet_number", "product_type", "dv_span", "dv_sector_start", "dv_sector_end",
+    "dv_run", "from_superseded_run",
     "label", "label_reason", "orbital_period_days", "xml_filename", "dvt_filename",
 ]
 
@@ -156,7 +157,7 @@ def _md_table(df: pd.DataFrame) -> str:
 # ---------------------------------------------------------------- main steps
 
 def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, min_age_s: float,
-         keep_all_versions: bool = False):
+         keep_all_versions: bool = False, drop_superseded: bool = False):
     """Group files by DV product, select spans, and keep one DV version per (span, TIC).
 
     MAST can hold more than one DV run for the same target and span (e.g. S3 has
@@ -205,6 +206,20 @@ def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, m
                            "ptype": ptype, "ts": g["ts"], "pid": g["pid"],
                            "xml": g["dvr.xml"], "dvt": g.get("dvt.fits")})
 
+    # A pipeline run is superseded when a later run in the same span reprocessed
+    # some of the same targets (S1: 00106 -> 00366). Runs in one span that share
+    # no targets (s0001-s0036: 00464 and 00471) are parts of one campaign.
+    run_tics: dict[tuple, set] = defaultdict(set)
+    for c in candidates:
+        run_tics[(c["span"], c["pid"])].add(c["tic"])
+    superseded: dict[tuple, int] = {}
+    for (span, pid), tics in run_tics.items():
+        later = [p for (s2, p), t2 in run_tics.items() if s2 == span and p > pid and tics & t2]
+        if later:
+            superseded[(span, pid)] = max(later)
+    for c in candidates:
+        c["superseded_by"] = superseded.get((c["span"], c["pid"]))
+
     by_target: dict[tuple, list] = defaultdict(list)
     for c in candidates:
         by_target[(c["span"], c["tic"])].append(c)
@@ -222,7 +237,13 @@ def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, m
             dropped_versions[c["span"]] += 1
             if len(dropped_examples) < 20:
                 dropped_examples.append(f"{c['xml']} (kept {versions[0]['xml']})")
-    return kept, excluded_spans, skipped_recent, unrecognized, no_xml, dropped_versions, dropped_examples
+
+    only_superseded = Counter(c["span"] for c in kept if c["superseded_by"] is not None)
+    if drop_superseded:
+        kept = [c for c in kept if c["superseded_by"] is None]
+    sup = {"runs": [f"{span}: {pid:05d} -> {new:05d}" for (span, pid), new in sorted(superseded.items())],
+           "only_superseded": dict(only_superseded)}
+    return kept, excluded_spans, skipped_recent, unrecognized, no_xml, dropped_versions, dropped_examples, sup
 
 
 def main() -> int:
@@ -237,6 +258,8 @@ def main() -> int:
     ap.add_argument("--tolerance", type=float, default=0.01)
     ap.add_argument("--no-checksums", action="store_true")
     ap.add_argument("--overwrite", action="store_true", help="replace an existing release at --out")
+    ap.add_argument("--drop-superseded", action="store_true",
+                    help="leave out targets whose only DV report is from a run a later processing replaced")
     ap.add_argument("--keep-all-versions", action="store_true",
                     help="keep every DV version of a target/span instead of only the latest")
     args = ap.parse_args()
@@ -258,11 +281,14 @@ def main() -> int:
     single_sectors = parse_sector_spec(args.single_sectors)
 
     # 1. scan
-    kept, excluded_spans, skipped_recent, unrecognized, no_xml, dropped_versions, dropped_examples = scan(
-        dv_dir, multi_spans, single_sectors, args.min_age_min * 60, args.keep_all_versions)
+    kept, excluded_spans, skipped_recent, unrecognized, no_xml, dropped_versions, dropped_examples, sup = scan(
+        dv_dir, multi_spans, single_sectors, args.min_age_min * 60, args.keep_all_versions,
+        args.drop_superseded)
     print(f"[scan] {len(kept):,} targets kept | excluded spans {dict(excluded_spans)} | "
           f"older DV versions dropped {dict(dropped_versions)} | skipped as recent {skipped_recent} | "
           f"unrecognized files {unrecognized} | xml missing {no_xml}", flush=True)
+    print(f"[scan] superseded runs {sup['runs']} | targets only in a superseded run {sup['only_superseded']} "
+          f"({'dropped' if args.drop_superseded else 'kept, flagged from_superseded_run'})", flush=True)
     if not kept:
         sys.exit("nothing to build")
 
@@ -281,7 +307,8 @@ def main() -> int:
             for r in trows:
                 r.update(xml_filename=name, dvt_filename=k["dvt"], dv_span=k["span"],
                          dv_sector_start=k["a"], dv_sector_end=k["b"], product_type=k["ptype"],
-                         n_dv_versions=k["n_dv_versions"],
+                         n_dv_versions=k["n_dv_versions"], dv_run=k["pid"],
+                         from_superseded_run=k["superseded_by"] is not None,
                          filename_tic=k["tic"], parser_version=parser_version, parsed_at=parsed_at)
             rows.extend(trows)
             if n % 2000 == 0:
@@ -344,6 +371,8 @@ def main() -> int:
         "older_dv_versions_dropped": dict(dropped_versions),
         "older_dv_versions_examples": dropped_examples,
         "keep_all_versions": args.keep_all_versions,
+        "superseded_runs": sup["runs"], "targets_only_in_superseded_run": sup["only_superseded"],
+        "drop_superseded": args.drop_superseded,
         "skipped_recent_files": skipped_recent, "dvt_missing": n_dvt_missing,
         "tic_filename_mismatches": tic_mismatch, "link_modes": dict(link_modes),
         "labels": summary["labels"], "edge_cases": summary["edge_cases"],
@@ -389,6 +418,17 @@ def write_readme(out: Path, info: dict, span_tbl, label_tbl, reason_tbl, summary
                     f"({info['older_dv_versions_dropped']}). `n_dv_versions` records how many existed.")
     else:
         dup_text = "No target had more than one DV version in the same span."
+    n_only = sum(info["targets_only_in_superseded_run"].values())
+    if info["superseded_runs"]:
+        runs = "; ".join(info["superseded_runs"])
+        fate = ("left out of this release (`--drop-superseded`)" if info["drop_superseded"] else
+                "kept and flagged `from_superseded_run = True`. Use `df[~df.from_superseded_run]` "
+                "to train on the latest processing only")
+        dup_text += (f"\n\nSPOC reprocessed some sectors. Runs replaced by a later processing of the same "
+                     f"span (old run -> new run): {runs}. {n_only:,} targets have a DV report only in a "
+                     f"replaced run, meaning the later processing produced no report for them "
+                     f"({info['targets_only_in_superseded_run']}). They are {fate}. `dv_run` gives the run "
+                     f"number of every row.")
     text = f"""# EB classifier training data, release {info['release']}
 
 Built {info['built_at'][:19]} UTC from tess-megastructures commit `{info['repo_commit'][:12] or 'unknown'}`
