@@ -161,8 +161,9 @@ def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, m
 
     MAST can hold more than one DV run for the same target and span (e.g. S3 has
     tess2018263124740-...-00405 and tess2018267104341-...-00126 for some TICs).
-    By default the version with the latest file timestamp is kept; the others
-    are reported and left out.
+    By default the latest SPOC processing is kept: the highest pipeline run
+    number (last filename field, e.g. 00405 over 00126), which also has the
+    higher pipelineTaskId. The others are reported and left out.
     """
     now = time.time()
     groups: dict[str, dict] = defaultdict(dict)
@@ -210,7 +211,7 @@ def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, m
     dropped_versions: Counter = Counter()
     dropped_examples: list[str] = []
     for versions in by_target.values():
-        versions.sort(key=lambda c: (c["ts"], c["pid"]), reverse=True)
+        versions.sort(key=lambda c: (c["pid"], c["ts"]), reverse=True)
         for c in versions:
             c["n_dv_versions"] = len(versions)
         if keep_all_versions:
@@ -383,8 +384,8 @@ def write_readme(out: Path, info: dict, span_tbl, label_tbl, reason_tbl, summary
         dup_text = ("Every DV version of a target is included (`--keep-all-versions`); `n_dv_versions` > 1 "
                     "marks targets with more than one SPOC DV run for the same span.")
     elif n_drop:
-        dup_text = (f"MAST holds more than one DV run for some targets in the same span. Only the version with "
-                    f"the latest file timestamp is included; {n_drop:,} older versions were left out "
+        dup_text = (f"MAST holds more than one DV run for some targets in the same span. Only the latest SPOC "
+                    f"processing (highest pipeline run number, the last filename field) is included; {n_drop:,} older versions were left out "
                     f"({info['older_dv_versions_dropped']}). `n_dv_versions` records how many existed.")
     else:
         dup_text = "No target had more than one DV version in the same span."
@@ -460,9 +461,10 @@ A TCE matches a catalog object when the TIC agrees and the period ratio is withi
   per TIC so continuous-viewing-zone stars (about 20 single-sector copies in S1-S36) do not dominate.
 - Evaluate on `product_type == "multi"`, since that is what MegaMiner sees.
 - Kostov+2025 EBs are not used in this release. Gaia DR3 EBs and RUWE are not joined yet.
-- No folded or binned views are included. Build them from the dvt.fits light curves
-  (`orbital_period_days`, `transit_epoch_btjd` and `weak_secondary_max_mes_phase_days` in the table
-  give the fold and secondary-eclipse phase).
+- No folded or binned views are included. Each dvt.fits has one extension per TCE (`TCE_n`,
+  n = `planet_number`) holding `PHASE` for that TCE's ephemeris and the detrended flux
+  `LC_DETREND`, so global and local views can be binned directly from those columns.
+  `weak_secondary_max_mes_phase_days` in the table gives the secondary-eclipse phase.
 
 ## dvt.fits layout
 
