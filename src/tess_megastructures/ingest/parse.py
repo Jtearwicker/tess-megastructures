@@ -512,12 +512,16 @@ def parse_sector(
     }
     all_rows: list[dict[str, Any]] = []
 
+    if error_log_path is not None:
+        error_log_path.parent.mkdir(parents=True, exist_ok=True)
     error_fh = error_log_path.open("w") if error_log_path else None
 
     try:
         for path in xml_files:
             try:
                 rows = parse_dv_xml(path)
+                for row in rows:
+                    row["xml_filename"] = path.name
                 all_rows.extend(rows)
                 counts["files_ok"] += 1
                 counts["tces_extracted"] += len(rows)
