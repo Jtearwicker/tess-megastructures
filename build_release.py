@@ -56,7 +56,12 @@ CATALOG_FILES = ("vizier_prsa2022_t0.parquet", "exoarchive_pscomppars.parquet", 
 EXPECTED_TARGETS = {"s0001-s0036": 6791}  # from the MAST obs_id query for that run
 
 # tess2018206190142-s0001-s0036-0000000025155310-00106_dvr.xml
-_NAME = re.compile(r"^(?P<stem>.+-s(?P<a>\d{4})-s(?P<b>\d{4})-(?P<tic>\d+)-\d+)_(?P<kind>dvr\.xml|dvt\.fits)$")
+_NAME = re.compile(r"^(?P<stem>tess(?P<ts>\d+)-s(?P<a>\d{4})-s(?P<b>\d{4})-(?P<tic>\d+)-(?P<pid>\d+))"
+                   r"_(?P<kind>dvr\.xml|dvt\.fits)$")
+# files whose committed state defines the release (dirty check is limited to these)
+BUILD_SOURCES = ("build_release.py", "src/tess_megastructures/ingest/parse.py",
+                 "src/tess_megastructures/annotate/eb_labels.py",
+                 "src/tess_megastructures/annotate/period_harmonics.py")
 
 FRONT_COLS = [
     "tic_id", "planet_number", "product_type", "dv_span", "dv_sector_start", "dv_sector_end",
@@ -150,7 +155,15 @@ def _md_table(df: pd.DataFrame) -> str:
 
 # ---------------------------------------------------------------- main steps
 
-def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, min_age_s: float):
+def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, min_age_s: float,
+         keep_all_versions: bool = False):
+    """Group files by DV product, select spans, and keep one DV version per (span, TIC).
+
+    MAST can hold more than one DV run for the same target and span (e.g. S3 has
+    tess2018263124740-...-00405 and tess2018267104341-...-00126 for some TICs).
+    By default the version with the latest file timestamp is kept; the others
+    are reported and left out.
+    """
     now = time.time()
     groups: dict[str, dict] = defaultdict(dict)
     skipped_recent = 0
@@ -169,8 +182,10 @@ def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, m
             g = groups[m["stem"]]
             g[m["kind"]] = e.name
             g["a"], g["b"], g["tic"] = int(m["a"]), int(m["b"]), int(m["tic"])
+            g["ts"], g["pid"] = int(m["ts"]), int(m["pid"])
 
     kept, excluded_spans, no_xml = [], Counter(), 0
+    candidates = []
     for stem, g in groups.items():
         span = f"s{g['a']:04d}-s{g['b']:04d}"
         if g["a"] == g["b"]:
@@ -185,9 +200,28 @@ def scan(dv_dir: Path, multi_spans: set[str], single_sectors: set[int] | None, m
         if "dvr.xml" not in g:
             no_xml += 1
             continue
-        kept.append({"stem": stem, "span": span, "a": g["a"], "b": g["b"], "tic": g["tic"], "ptype": ptype,
-                     "xml": g["dvr.xml"], "dvt": g.get("dvt.fits")})
-    return kept, excluded_spans, skipped_recent, unrecognized, no_xml
+        candidates.append({"stem": stem, "span": span, "a": g["a"], "b": g["b"], "tic": g["tic"],
+                           "ptype": ptype, "ts": g["ts"], "pid": g["pid"],
+                           "xml": g["dvr.xml"], "dvt": g.get("dvt.fits")})
+
+    by_target: dict[tuple, list] = defaultdict(list)
+    for c in candidates:
+        by_target[(c["span"], c["tic"])].append(c)
+    dropped_versions: Counter = Counter()
+    dropped_examples: list[str] = []
+    for versions in by_target.values():
+        versions.sort(key=lambda c: (c["ts"], c["pid"]), reverse=True)
+        for c in versions:
+            c["n_dv_versions"] = len(versions)
+        if keep_all_versions:
+            kept.extend(versions)
+            continue
+        kept.append(versions[0])
+        for c in versions[1:]:
+            dropped_versions[c["span"]] += 1
+            if len(dropped_examples) < 20:
+                dropped_examples.append(f"{c['xml']} (kept {versions[0]['xml']})")
+    return kept, excluded_spans, skipped_recent, unrecognized, no_xml, dropped_versions, dropped_examples
 
 
 def main() -> int:
@@ -202,6 +236,8 @@ def main() -> int:
     ap.add_argument("--tolerance", type=float, default=0.01)
     ap.add_argument("--no-checksums", action="store_true")
     ap.add_argument("--overwrite", action="store_true", help="replace an existing release at --out")
+    ap.add_argument("--keep-all-versions", action="store_true",
+                    help="keep every DV version of a target/span instead of only the latest")
     args = ap.parse_args()
     t0 = time.time()
 
@@ -221,11 +257,11 @@ def main() -> int:
     single_sectors = parse_sector_spec(args.single_sectors)
 
     # 1. scan
-    kept, excluded_spans, skipped_recent, unrecognized, no_xml = scan(
-        dv_dir, multi_spans, single_sectors, args.min_age_min * 60)
+    kept, excluded_spans, skipped_recent, unrecognized, no_xml, dropped_versions, dropped_examples = scan(
+        dv_dir, multi_spans, single_sectors, args.min_age_min * 60, args.keep_all_versions)
     print(f"[scan] {len(kept):,} targets kept | excluded spans {dict(excluded_spans)} | "
-          f"skipped as recent {skipped_recent} | unrecognized files {unrecognized} | xml missing {no_xml}",
-          flush=True)
+          f"older DV versions dropped {dict(dropped_versions)} | skipped as recent {skipped_recent} | "
+          f"unrecognized files {unrecognized} | xml missing {no_xml}", flush=True)
     if not kept:
         sys.exit("nothing to build")
 
@@ -244,6 +280,7 @@ def main() -> int:
             for r in trows:
                 r.update(xml_filename=name, dvt_filename=k["dvt"], dv_span=k["span"],
                          dv_sector_start=k["a"], dv_sector_end=k["b"], product_type=k["ptype"],
+                         n_dv_versions=k["n_dv_versions"],
                          filename_tic=k["tic"], parser_version=parser_version, parsed_at=parsed_at)
             rows.extend(trows)
             if n % 2000 == 0:
@@ -293,7 +330,7 @@ def main() -> int:
     example = next((out / "data" / k["dvt"] for k in ok_targets if k["dvt"]), None)
 
     commit = _git("rev-parse", "HEAD")
-    dirty = _git("status", "--porcelain")
+    dirty = _git("status", "--porcelain", "--", *BUILD_SOURCES)
     info = {
         "release": out.name, "built_at": dt.datetime.now(dt.UTC).isoformat(),
         "command": " ".join(sys.argv), "repo_commit": commit, "repo_dirty": bool(dirty),
@@ -303,6 +340,9 @@ def main() -> int:
         "single_sectors": "all on disk" if single_sectors is None else sorted(single_sectors),
         "targets": len(ok_targets), "tces": len(df), "tics": int(df["tic_id"].nunique()),
         "file_errors": len(errors), "excluded_spans": dict(excluded_spans),
+        "older_dv_versions_dropped": dict(dropped_versions),
+        "older_dv_versions_examples": dropped_examples,
+        "keep_all_versions": args.keep_all_versions,
         "skipped_recent_files": skipped_recent, "dvt_missing": n_dvt_missing,
         "tic_filename_mismatches": tic_mismatch, "link_modes": dict(link_modes),
         "labels": summary["labels"], "edge_cases": summary["edge_cases"],
@@ -338,10 +378,20 @@ def write_readme(out: Path, info: dict, span_tbl, label_tbl, reason_tbl, summary
                              + ("" if n >= n_exp else " (INCOMPLETE)"))
     excluded = ", ".join(f"{k} ({v:,} targets)" for k, v in sorted(info["excluded_spans"].items())) or "none"
     ec = summary["edge_cases"]
+    n_drop = sum(info["older_dv_versions_dropped"].values())
+    if info["keep_all_versions"]:
+        dup_text = ("Every DV version of a target is included (`--keep-all-versions`); `n_dv_versions` > 1 "
+                    "marks targets with more than one SPOC DV run for the same span.")
+    elif n_drop:
+        dup_text = (f"MAST holds more than one DV run for some targets in the same span. Only the version with "
+                    f"the latest file timestamp is included; {n_drop:,} older versions were left out "
+                    f"({info['older_dv_versions_dropped']}). `n_dv_versions` records how many existed.")
+    else:
+        dup_text = "No target had more than one DV version in the same span."
     text = f"""# EB classifier training data, release {info['release']}
 
 Built {info['built_at'][:19]} UTC from tess-megastructures commit `{info['repo_commit'][:12] or 'unknown'}`
-{'(working tree had uncommitted changes, see BUILD_INFO.json)' if info['repo_dirty'] else ''}.
+{'(builder or parser/label code had uncommitted changes, see BUILD_INFO.json)' if info['repo_dirty'] else ''}
 
 ## Contents
 
@@ -366,6 +416,8 @@ SPOC 2-minute cadence Data Validation products only (no FFI). Two product types:
 {chr(10).join(exp_lines)}
 
 Excluded spans: {excluded}.
+
+{dup_text}
 
 {_md_table(span_tbl)}
 
