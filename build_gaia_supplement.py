@@ -38,7 +38,7 @@ README_MARK = "## Supplementary: RUWE and Gaia DR3 EB holdout"
 BATCH = 500
 
 TCE_COLS = ["xml_filename", "planet_number", "tic_id", "orbital_period_days", "label", "on_eb_host",
-            "label_prsa_eb", "product_type"]
+            "label_prsa_eb", "product_type", "effective_temp"]
 DOYLE_COLS = ["tic_id", "doyle_gaia_dr3", "doyle_ruwe", "doyle_parallax_over_error", "doyle_nss"]
 
 
@@ -172,6 +172,12 @@ def main() -> int:
     xt = pd.crosstab(out["label"], out["gaia_eb_period_match"].map({True: "gaia_match", False: "no_match"}))
     ruwe_hi = int((out["doyle_ruwe"] > 1.4).sum())
     print(f"[ruwe] coverage {cov_tce:.1f}% of TCEs, {cov_tic:.1f}% of TICs | RUWE > 1.4: {ruwe_hi:,} TCEs", flush=True)
+    miss = (1 - out.groupby("label")["has_doyle_params"].mean()).mul(100).round().astype(int)
+    miss_txt = ", ".join(f"{k} {v}%" for k, v in miss.items())
+    teff = out.groupby("has_doyle_params")["effective_temp"].median()
+    teff_txt = (f"median Teff is {teff.get(False, float('nan')):,.0f} K for stars without Doyle+24 parameters "
+                f"and {teff.get(True, float('nan')):,.0f} K for stars with them")
+    print(f"[ruwe] TCEs without Doyle+24 parameters by label: {miss_txt} | {teff_txt}", flush=True)
     print(f"[holdout] {n_gaia_tic:,} TICs are Gaia EBs | {n_match:,} TCEs period-matched | "
           f"{n_indep:,} TCEs on {n_indep_tic:,} TICs independent of the training labels", flush=True)
     print(xt.to_string(), flush=True)
@@ -189,6 +195,12 @@ RUWE (`doyle_ruwe`) and parallax over error come from Doyle+24 (Vizier J/MNRAS/5
 source MegaMiner uses, so training sees the values the classifier will see in production. Coverage:
 {cov_tce:.1f}% of TCEs and {cov_tic:.1f}% of TICs. Stars outside the Doyle+24 sample have null values
 and `has_doyle_params = False`. `doyle_nss` is the Gaia DR3 non-single-star flag.
+
+Coverage differs by label. Share of TCEs without Doyle+24 parameters: {miss_txt}. The
+{teff_txt}. Do not use `has_doyle_params`, or whether RUWE is missing, as a feature: missingness
+partly encodes the label. MegaMiner survivors pass
+main-sequence cuts and almost all have Doyle+24 parameters, so a model that leans on missingness
+will not transfer to them.
 
 Gaia DR3 eclipsing binaries (`gaiadr3.vari_eclipsing_binary`, Mowlavi+2023) are matched through the
 Doyle+24 Gaia DR3 id. `gaia_eb` marks {n_gaia_tic:,} TICs that are Gaia EBs. `gaia_eb_period_match` marks
