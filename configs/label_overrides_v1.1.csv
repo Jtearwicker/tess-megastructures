@@ -1,0 +1,4 @@
+tic_id,dvt_filename,planet_number,label,reason,note
+267574918,,,quarantine,white_dwarf_host,WD 1856+534 b: giant planet transiting a white dwarf (~56% deep); unrepresentative of the survivor population
+92352621,,,quarantine,likely_planet,3.950 d TCE matches WASP-94 A b; Prsa entry looks like a misclassified planet in a blended pair
+429021446,,,quarantine,low_snr,EB TCE at model SNR 3 on a Tmag 15.7 star

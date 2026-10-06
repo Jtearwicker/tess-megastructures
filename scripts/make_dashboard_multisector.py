@@ -102,7 +102,7 @@ CATALOG_FLAG_LINKS = {
 # --- stellar cuts (informational; do NOT gate). base labels.
 CUT_LABELS = {
     "passed_tmag_cut": "Tmag in range",
-    "passed_log_g_cut": "Surface gravity (log g",  # closing paren added with threshold
+    "passed_log_g_cut": "Surface gravity (log g)",
     "passed_parallax_cut": "Parallax S/N",
     "passed_ruwe_cut": "RUWE",
 }
@@ -113,12 +113,32 @@ DIAG_BASE_LABELS = {
     "flag_suspected_eb": "Suspected eclipsing binary (SPOC)",
     "flag_no_convergence": "Transit fit did not converge",
     "flag_invalid_odd_even": "Invalid odd/even statistic",
-    "flag_background_eb": "Background / blended EB (ghost",
+    "flag_background_eb": "Background / blended EB (ghost diagnostic)",
     "flag_centroid_offset": "Off-target centroid offset",
     "flag_matching_period": "Matching-period signals",
     "flag_large_odd_even": "Large odd/even depth difference",
     "flag_low_snr": "Low S/N",
 }
+
+# The secondary-eclipse test (layer-1) is shown as a diagnostic flag, computed on the fly.
+SECONDARY_FLAG_COL = "flag_secondary_eclipse"
+SECONDARY_LABEL = "Significant secondary eclipse (weak-secondary \u2265 %g)"
+
+# Short labels for the co-occurrence matrix headers.
+COOC_LABELS = {
+    "flag_suspected_eb": "Suspected EB (SPOC)",
+    "flag_no_convergence": "Fit not converged",
+    "flag_invalid_odd_even": "Invalid odd/even",
+    "flag_background_eb": "Background EB (ghost)",
+    "flag_centroid_offset": "Centroid offset",
+    "flag_matching_period": "Matching period",
+    "flag_large_odd_even": "Large odd/even",
+    "flag_low_snr": "Low S/N",
+    "flag_secondary_eclipse": "Secondary eclipse",
+    "flag_catalog_eb": "Catalog EB",
+}
+
+PUBLIC_TITLE = "MegaMiner: Searching TESS Threshold Crossing Events for Anomalous Signals"
 
 
 # --- Layer-1 EB filter (reversible, audited hide on a positive secondary-eclipse
@@ -220,7 +240,7 @@ def _diag_label(col: str, diag: dict) -> str:
     g = diag.get
     suffix = ""
     if col == "flag_background_eb" and g("ghost_ratio_min") is not None:
-        suffix = f" ratio &lt; {_fmt(g('ghost_ratio_min'))})"
+        return f"Background / blended EB (ghost ratio &lt; {_fmt(g('ghost_ratio_min'))})"
     elif col == "flag_centroid_offset" and g("centroid_offset_max_sigma") is not None:
         suffix = f" (&gt; {_fmt(g('centroid_offset_max_sigma'))}\u03c3)"
     elif col == "flag_large_odd_even" and g("odd_even_sig_max") is not None:
@@ -239,7 +259,7 @@ def _cut_label(col: str, stel: dict) -> str:
     if col == "passed_tmag_cut" and s("tmag_min") is not None and s("tmag_max") is not None:
         suffix = f" ({_fmt(s('tmag_min'))}\u2013{_fmt(s('tmag_max'))})"
     elif col == "passed_log_g_cut" and s("log_g_min") is not None:
-        suffix = f" \u2265 {_fmt(s('log_g_min'))})"
+        return f"Surface gravity (log g \u2265 {_fmt(s('log_g_min'))})"
     elif col == "passed_parallax_cut" and s("parallax_over_error_min") is not None:
         suffix = f" (\u2265 {_fmt(s('parallax_over_error_min'))})"
     elif col == "passed_ruwe_cut" and s("ruwe_max_for_clean") is not None:
@@ -493,8 +513,8 @@ def _cooccurrence_table(df: pd.DataFrame, flag_cols: list[str]) -> str:
     if not flag_cols:
         return "<p class='empty'>No flag columns found.</p>"
     bdf = df[flag_cols].fillna(False).astype(bool)
-    short = [c.replace("flag_", "") for c in flag_cols]
-    header = "".join(f"<th class='rot'><div>{html.escape(s)}</div></th>" for s in short)
+    short = [COOC_LABELS.get(c, c.replace("flag_", "").replace("_", " ")) for c in flag_cols]
+    header = "".join(f"<th class='vert'><div>{html.escape(s)}</div></th>" for s in short)
     rows = []
     for i, ci in enumerate(flag_cols):
         cells = []
@@ -806,7 +826,53 @@ vetting, rather than score alone. {per_candidate_note}</p>
 <div class="hists">{hist_score}{hist_z}{scatter}</div>"""
 
 
-def _request_access_panel(n_visible: int) -> str:
+def _pipeline_svg() -> str:
+    """Simple left-to-right pipeline graphic for the public view (no numbers, so it
+    can never disagree with the stat boxes). Colors follow the dashboard tokens:
+    cyan = processing, coral = removal/flagging, violet dashed = in development,
+    green = output."""
+    steps = [
+        ("TESS TCEs", "SPOC transit detections", "cyan", False),
+        ("Anomaly ranking", "least planet-like first", "cyan", False),
+        ("Remove known EBs", "vetted EB catalogs", "coral", False),
+        ("Diagnostic flags", "SPOC DV tests", "coral", False),
+        ("ML classifiers", "in development", "violet", True),
+        ("Anomaly candidates", "for expert review", "green", False),
+    ]
+    col = {"cyan": "#61d8e4", "coral": "#f2745f", "violet": "#9aa2ff", "green": "#60d39f"}
+    fill = {"cyan": "#1d211a", "coral": "rgba(242,116,95,0.10)", "violet": "#1d211a",
+            "green": "rgba(96,211,159,0.10)"}
+    w, h, gap, x0, y0 = 190, 128, 44, 40, 72
+    parts = ['<text x="40" y="44" font-size="22" font-weight="800" fill="#f4f0e6">MegaMiner pipeline</text>']
+    for i, (title, sub, tone, dashed) in enumerate(steps):
+        x = x0 + i * (w + gap)
+        c = col[tone]
+        dash = ' stroke-dasharray="6 5"' if dashed else ""
+        stroke = c if tone != "cyan" else "rgba(244,240,230,0.28)"
+        tcol = c if tone == "green" else "#f4f0e6"
+        parts.append(
+            f'<rect x="{x}" y="{y0}" width="{w}" height="{h}" rx="10" fill="{fill[tone]}" '
+            f'stroke="{stroke}" stroke-opacity="{0.55 if tone != "cyan" else 1}" stroke-width="1.5"{dash}/>'
+            f'<circle cx="{x + w / 2}" cy="{y0 + 34}" r="15" fill="{c}"/>'
+            f'<text x="{x + w / 2}" y="{y0 + 39}" text-anchor="middle" font-size="14" font-weight="800" fill="#0d0f0d">{i + 1}</text>'
+            f'<text x="{x + w / 2}" y="{y0 + 76}" text-anchor="middle" font-size="16" font-weight="700" fill="{tcol}">{html.escape(title)}</text>'
+            f'<text x="{x + w / 2}" y="{y0 + 100}" text-anchor="middle" font-size="12.5" fill="#b8b2a4">{html.escape(sub)}</text>'
+        )
+        if i < len(steps) - 1:
+            ax = x + w + gap / 2
+            ay = y0 + h / 2
+            parts.append(
+                f'<line x1="{x + w + 6}" y1="{ay}" x2="{x + w + gap - 6}" y2="{ay}" stroke="rgba(244,240,230,0.20)" stroke-width="1.5"/>'
+                f'<path d="M{ax - 4} {ay - 7} L{ax + 3} {ay} L{ax - 4} {ay + 7}" fill="none" stroke="#b8b2a4" stroke-width="2.2" '
+                f'stroke-linecap="round" stroke-linejoin="round"/>'
+            )
+    vw = x0 * 2 + len(steps) * w + (len(steps) - 1) * gap
+    return (f'<div class="pipeline"><svg viewBox="0 0 {vw} {y0 + h + 30}" role="img" '
+            f'aria-label="MegaMiner pipeline: ' + ", then ".join(t for t, *_ in steps) + '" '
+            f'font-family="Inter, ui-sans-serif, system-ui, sans-serif">' + "".join(parts) + "</svg></div>")
+
+
+def _request_access_panel(n_survivors: int, sector_range: str) -> str:
     """Public-view replacement for the survivor table.
 
     Shows the candidate COUNT (an aggregate summary number, not the data) and a
@@ -818,16 +884,15 @@ def _request_access_panel(n_visible: int) -> str:
     # Access-request Google Form. Update here if the form URL changes.
     request_form_url = "https://forms.gle/C6rweSEtFyHziMmU8"
     return f"""<div class="reqaccess">
-  <p class="reqlead">This summary reflects <strong>{n_visible:,}</strong> candidate
-  signals from the current processing run (working set with catalogued EBs removed
-  and secondary-eclipse binaries filtered). The candidate list itself is part of
-  our preliminary, unpublished results and is available to collaborators and
-  sponsors on request.</p>
+  <p class="reqlead">The <strong>{n_survivors:,}</strong> unflagged survivors from sectors
+  {html.escape(sector_range)} are the signals that pass every diagnostic and catalog check
+  above. They are ranked by anomaly score and form our candidate list for follow-up
+  vetting. The list is part of our preliminary, unpublished results and is available
+  to collaborators and sponsors on request.</p>
   <p><a class="reqbtn" href="{request_form_url}" target="_blank" rel="noopener noreferrer">Request access to preliminary results</a></p>
-  <p class="reqnote">Access is granted per-person by the project team. Once
-  approved, you'll be able to view the full survivor candidate list, which updates
-  as we process additional TESS sectors. Please use the same email on the form
-  that you'll use to log in.</p>
+  <p class="reqnote">Access is granted individually by the project team. Once approved,
+  you can view the full ranked candidate list, which is updated as new TESS sectors are
+  processed. Please use the same email address on the form that you will use to log in.</p>
 </div>"""
 
 
@@ -1097,6 +1162,8 @@ def build_report(
     view: str = "full",
     top_n: int = 10000,
     dv_links: pd.DataFrame | None = None,
+    n_tces: int | None = None,
+    last_updated: str | None = None,
 ) -> str:
     # view controls survivor-data exposure:
     #   "full"/"private" -> survivor table + its embedded JSON are included
@@ -1135,6 +1202,18 @@ def build_report(
 
     n_clean = _bool_count(df, "in_clean_sample") if "in_clean_sample" in df else 0
 
+    # ---- Independent counts over ALL signals (public boxes, flag bars, co-occurrence).
+    # The secondary-eclipse test (layer-1) counts as a diagnostic flag here.
+    df_flags = df_all.copy()
+    df_flags[SECONDARY_FLAG_COL] = _layer1_eb_mask(df_all).to_numpy()
+    diag_cols_all = present_diag + [SECONDARY_FLAG_COL]
+    diag_any = df_flags[diag_cols_all].fillna(False).astype(bool).any(axis=1)
+    cat_any = _catalog_eb_mask(df_all)
+    n_unflag_diag = int((~diag_any).sum())
+    n_unflag_cat = int((~cat_any).sum())
+    n_survivors = int((~diag_any & ~cat_any).sum())
+    n_tics_all = df_all["tic_id"].nunique() if "tic_id" in df_all.columns else 0
+
     # ---- Summary: fractions of all collapsed signals (honest denominator) ----
     summary = _bar("All collapsed signals", n_orig, n_orig, "#61d8e4")
     summary += _bar("Catalogued EBs \u2014 hard cut, removed", n_catalog_cut, n_orig, "#f2745f")
@@ -1158,7 +1237,7 @@ def build_report(
 
     # ---- Stellar cuts (with ranges) ----
     cut_bars = "".join(
-        _bar(_cut_label(c, stel), _bool_count(df, c), n_total, "#9aa2ff", label_is_html=True)
+        _bar(_cut_label(c, stel), _bool_count(df_all, c), n_orig, "#9aa2ff", label_is_html=True)
         for c in present_cuts
     )
 
@@ -1166,8 +1245,8 @@ def build_report(
     if "has_doyle_params" in df.columns:
         gaia_xmatch_bar = _bar(
             "Gaia cross-match (valid stellar parameters)",
-            _bool_count(df, "has_doyle_params"),
-            n_total,
+            _bool_count(df_all, "has_doyle_params"),
+            n_orig,
             "#61d8e4",
         )
     else:
@@ -1175,9 +1254,11 @@ def build_report(
 
     # ---- Diagnostic flags (with cutoffs) ----
     diag_bars = "".join(
-        _bar(_diag_label(c, diag), _bool_count(df, c), n_total, "#f2745f", label_is_html=True)
+        _bar(_diag_label(c, diag), _bool_count(df_all, c), n_orig, "#f2745f", label_is_html=True)
         for c in present_diag
     )
+    diag_bars += _bar(SECONDARY_LABEL % LAYER1_WSEC_THRESHOLD, int(df_flags[SECONDARY_FLAG_COL].sum()),
+                      n_orig, "#f2745f")
 
     # ---- Catalog flags (own section, three titled bars) ----
     def _cat_title(c: str) -> str:
@@ -1222,16 +1303,18 @@ def build_report(
             hists += _histogram_svg(df[col], title, log_x=logx)
 
     # co-occurrence over the gating flags (diagnostic + combined catalog)
-    cooc_cols = present_diag + (["flag_catalog_eb"] if "flag_catalog_eb" in df_all.columns else [])
-    cooc = _cooccurrence_table(df_all, cooc_cols)
+    cooc_cols = diag_cols_all + (["flag_catalog_eb"] if "flag_catalog_eb" in df_all.columns else [])
+    cooc = _cooccurrence_table(df_flags, cooc_cols)
 
     # SURVIVOR SECTION -- this is the security boundary.
     # For the public view we do NOT call _survivor_table at all, so the embedded
     # survivor JSON is never generated and cannot leak. We emit a request-access
     # panel in its place. For full/private, the survivor table (with data) renders.
+    sectors_tmp = _sector_str(df_all)
+    sector_range = sectors_tmp.replace("sectors ", "").replace("sector ", "").replace("-", "\u2013")
     if is_public:
-        survivors = _request_access_panel(n_visible)
-        survivor_heading = "Preliminary results (candidate signals)"
+        survivors = _request_access_panel(n_survivors, sector_range)
+        survivor_heading = "Preliminary results"
         exominer_section = _exominer_section(df, scores, public=True)
     else:
         survivors = _survivor_table(table_df, scores, top_n=top_n, dv_links=dv_links)
@@ -1265,6 +1348,41 @@ def build_report(
         + (f" Data version: {html.escape(data_version)}." if data_version else "")
         + f" Sectors processed: {html.escape(sectors)}."
     )
+    if is_public:
+        updated = f" Last updated: {html.escape(last_updated)}" if last_updated else ""
+        sub_line = f"Sectors processed: {html.escape(sector_range)}.{updated}"
+        tce_box = (f'<div class="stat"><div class="big">{n_tces:,}</div><div class="lbl">total TCEs</div></div>'
+                   if n_tces else "")
+        stats_html = f"""<div class="stats">
+  {tce_box}
+  <div class="stat"><div class="big">{n_orig:,}</div><div class="lbl">unique signals</div></div>
+  <div class="stat"><div class="big">{n_tics_all:,}</div><div class="lbl">unique TIC IDs</div></div>
+  <div class="stat"><div class="big">{n_unflag_diag:,}</div><div class="lbl">unflagged by diagnostics</div></div>
+  <div class="stat"><div class="big">{n_unflag_cat:,}</div><div class="lbl">unflagged by vetted catalogs</div></div>
+  <div class="stat"><div class="big">{n_survivors:,}</div><div class="lbl">total unflagged survivors</div></div>
+</div>"""
+        top_html = f"""<h1>{html.escape(PUBLIC_TITLE)}</h1>
+<p class="sub">{sub_line}</p>
+{_pipeline_svg()}
+{stats_html}"""
+        summary_html = ""
+    else:
+        top_html = f"""<h1>MegaMiner — Multi-Sector Signals</h1>
+<p class="sub">{html.escape(sectors)} &middot; generated {generated}</p>
+<p class="viewbanner">{view_banner}</p>
+
+<div class="stats">
+  <div class="stat"><div class="big">{n_total:,}</div><div class="lbl">working set</div></div>
+  <div class="stat"><div class="big">{n_tics:,}</div><div class="lbl">unique TICs</div></div>
+  <div class="stat"><div class="big">{n_catalog_cut:,}</div><div class="lbl">catalogued EBs removed</div></div>
+  <div class="stat"><div class="big">{n_layer1:,}</div><div class="lbl">layer-1 EB hide</div></div>
+  <div class="stat"><div class="big">{n_outward:,}</div><div class="lbl">outward-facing</div></div>
+  <div class="stat"><div class="big">{n_clean:,}</div><div class="lbl">in clean sample</div></div>
+</div>"""
+        summary_html = f"""<h2>Summary</h2>
+{summary}
+{summary_note}"""
+
     meta_note = (
         "thresholds from sample metadata"
         if thresholds
@@ -1279,7 +1397,7 @@ def build_report(
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{"MegaMiner — public summary" if is_public else "MegaMiner — multi-sector signals"}</title>
+<title>{html.escape(PUBLIC_TITLE) if is_public else "MegaMiner — multi-sector signals"}</title>
 <style>
   /* Design tokens matched to the technosurveys.com site (dark theme, Inter). */
   :root {{
@@ -1322,10 +1440,13 @@ def build_report(
   .reqbtn:hover {{ transform:translateY(-1px); background:#7ae0b3; }}
   .reqnote {{ font-size:12px; color:var(--muted); margin:12px 0 0; }}
   .viewbanner {{ font-size:12px; color:var(--muted); margin:2px 0 0; }}
+  .pipeline {{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:4px 6px; margin:18px 0 4px; }}
+  .pipeline {{ overflow-x:auto; }}
+  .pipeline svg {{ display:block; width:100%; min-width:880px; height:auto; }}
   table.cooc {{ border-collapse:collapse; font-size:12px; }}
   table.cooc td, table.cooc th {{ border:1px solid var(--line); padding:4px 7px; text-align:center; }}
-  table.cooc th.rot {{ height:90px; white-space:nowrap; }}
-  table.cooc th.rot div {{ transform:rotate(-60deg); width:20px; }}
+  table.cooc th.vert {{ vertical-align:bottom; padding:8px 4px; }}
+  table.cooc th.vert div {{ writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; margin:0 auto; font-weight:600; }}
   table.cooc th.rowlab {{ text-align:right; font-weight:600; }}
   table.cooc td.diag {{ font-weight:700; background:rgba(96,211,159,0.14); }}
   table.survivors {{ border-collapse:collapse; font-size:12px; width:100%; }}
@@ -1366,30 +1487,17 @@ def build_report(
   .note {{ font-size:12px; color:var(--muted); max-width:860px; }}
 </style></head><body>
 
-<h1>{"MegaMiner — Public Summary" if is_public else "MegaMiner — Multi-Sector Signals"}</h1>
-<p class="sub">{html.escape(sectors)} &middot; generated {generated}</p>
-<p class="viewbanner">{view_banner}</p>
+{top_html}
 
-<div class="stats">
-  <div class="stat"><div class="big">{n_total:,}</div><div class="lbl">working set</div></div>
-  <div class="stat"><div class="big">{n_tics:,}</div><div class="lbl">unique TICs</div></div>
-  <div class="stat"><div class="big">{n_catalog_cut:,}</div><div class="lbl">catalogued EBs removed</div></div>
-  <div class="stat"><div class="big">{n_layer1:,}</div><div class="lbl">layer-1 EB hide</div></div>
-  <div class="stat"><div class="big">{n_outward:,}</div><div class="lbl">outward-facing</div></div>
-  <div class="stat"><div class="big">{n_clean:,}</div><div class="lbl">in clean sample</div></div>
-</div>
-
-<h2>Summary</h2>
-{summary}
-{summary_note}
+{summary_html}
 
 <h2>Gaia Stellar Parameters</h2>
-<p class="secsub">Host-star parameters from the <a href="https://doi.org/10.1093/mnras/stae616" target="_blank" rel="noopener noreferrer">Doyle et al. (2024)</a> TESS&ndash;Gaia cross-match. Parameter cuts (True = passed) are informational; these do not gate.</p>
+<p class="secsub">Host-star parameters from the <a href="https://doi.org/10.1093/mnras/stae616" target="_blank" rel="noopener noreferrer">Doyle et al. (2024)</a> TESS&ndash;Gaia cross-match.</p>
 {gaia_xmatch_bar}
 {cut_bars or "<p class='empty'>No stellar-cut columns.</p>"}
 
 <h2>Diagnostic flags</h2>
-<p class="secsub">DV signal-quality diagnostics (True = suspicious). These gate survivors.</p>
+<p class="secsub">Flags derived from the diagnostic tests in the SPOC Data Validation (DV) reports for each TCE, with thresholds set by MegaMiner. A signal with any of these flags is not counted as an unflagged survivor.</p>
 {diag_bars or "<p class='empty'>No diagnostic-flag columns.</p>"}
 
 <h2>Catalog flags</h2>
@@ -1455,6 +1563,21 @@ def main(argv: list[str]) -> int:
         ),
     )
     ap.add_argument(
+        "--tce-table",
+        type=Path,
+        default=None,
+        help=(
+            "Per-TCE parquet the collapsed signal table was built from. Its row count "
+            "fills the public 'total TCEs' box, and its threshold metadata labels the "
+            "flag and cut bars when the input has none."
+        ),
+    )
+    ap.add_argument(
+        "--last-updated",
+        default=None,
+        help="Date shown as 'Last updated' in the public view (default: the input file's date).",
+    )
+    ap.add_argument(
         "--clean-csv",
         type=Path,
         default=None,
@@ -1497,9 +1620,20 @@ def main(argv: list[str]) -> int:
         else:
             dv_links = _read(args.dv_links)
     thresholds = _read_thresholds(args.input) if args.input.suffix != ".csv" else {}
+    n_tces = None
+    if args.tce_table is not None:
+        import pyarrow.parquet as pq
+
+        n_tces = pq.read_metadata(args.tce_table).num_rows
+        if not thresholds:
+            thresholds = _read_thresholds(args.tce_table)
+        print(f"TCE table {args.tce_table.name}: {n_tces:,} TCEs; "
+              f"thresholds {'found' if thresholds else 'not found'}")
+    last_updated = args.last_updated or dt.date.fromtimestamp(args.input.stat().st_mtime).isoformat()
     out = args.output or args.input.with_name(args.input.stem + f"_dashboard_{args.view}.html")
     out.write_text(
-        build_report(df, args.input.name, thresholds, scores, view=args.view, top_n=args.top_n, dv_links=dv_links),
+        build_report(df, args.input.name, thresholds, scores, view=args.view, top_n=args.top_n, dv_links=dv_links,
+                     n_tces=n_tces, last_updated=last_updated),
         encoding="utf-8",
     )
     n_scored = f", {len(scores):,} scored" if scores is not None else ""
