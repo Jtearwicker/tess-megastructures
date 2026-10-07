@@ -24,6 +24,7 @@ Columns produced
 - flag_prsa_eb                 TIC in Prsa+2022 (vetted)            [flag]
 - flag_kostov_eb               TIC in Kostov+2025 ten-thousand      [flag]
 - flag_oddo_eb                 TIC in Oddo+2025 M+M EBs (vetted)    [flag]
+- flag_calnet_eb               TIC in Shan+2025 CALNet EBs (vetted) [flag]
 - flag_catalog_eb              OR of all vetted-EB flags            [flag]
 - annotation_kostov_candidate  TIC in Kostov unvetted NN list       [annotation]
 
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 CATALOG_EB_FLAG = "flag_catalog_eb"
 
 # Per-source vetted flags (for the dashboard's per-catalog bars).
-PER_SOURCE_VETTED_FLAGS = ["flag_prsa_eb", "flag_kostov_eb", "flag_oddo_eb"]
+PER_SOURCE_VETTED_FLAGS = ["flag_prsa_eb", "flag_kostov_eb", "flag_oddo_eb", "flag_calnet_eb"]
 
 # Annotation columns (do NOT gate anything).
 CATALOG_ANNOTATION_COLUMNS = ["annotation_kostov_candidate"]
@@ -64,6 +65,7 @@ def add_catalog_flags(
     kostov_vetted: pd.DataFrame | None = None,
     kostov_unvetted: pd.DataFrame | None = None,
     oddo: pd.DataFrame | None = None,
+    calnet: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Add catalog EB flags (vetted) and annotations (unvetted) to the TCE sample.
 
@@ -71,7 +73,7 @@ def add_catalog_flags(
     ----------
     df : DataFrame
         TCE sample; must have ``tic_id`` (int).
-    prsa, kostov_vetted, kostov_unvetted, oddo : DataFrame or None
+    prsa, kostov_vetted, kostov_unvetted, oddo, calnet : DataFrame or None
         Loader outputs (each with a ``ticId`` column). Any that is None is
         treated as empty (its column becomes all-False), with a warning.
 
@@ -98,12 +100,19 @@ def add_catalog_flags(
     if not oddo_tics:
         logger.warning("Oddo+2025 catalog empty/missing; flag_oddo_eb all False")
 
+    calnet_tics = _tic_set(calnet)
+    if not calnet_tics:
+        logger.warning("Shan+2025 CALNet catalog empty/missing; flag_calnet_eb all False")
+
     out["flag_prsa_eb"] = tic.isin(prsa_tics)
     out["flag_kostov_eb"] = tic.isin(kostov_tics)
     out["flag_oddo_eb"] = tic.isin(oddo_tics)
+    out["flag_calnet_eb"] = tic.isin(calnet_tics)
 
     # --- combined vetted flag (the one that gates) ---
-    out["flag_catalog_eb"] = out["flag_prsa_eb"] | out["flag_kostov_eb"] | out["flag_oddo_eb"]
+    out["flag_catalog_eb"] = (
+        out["flag_prsa_eb"] | out["flag_kostov_eb"] | out["flag_oddo_eb"] | out["flag_calnet_eb"]
+    )
 
     # --- unvetted annotation (does NOT gate) ---
     unvetted_tics = _tic_set(kostov_unvetted)
@@ -114,11 +123,12 @@ def add_catalog_flags(
     out["annotation_kostov_candidate"] = tic.isin(unvetted_tics)
 
     logger.info(
-        "Catalog cross-match: %d Prsa, %d Kostov-vetted, %d Oddo, %d combined-vetted "
-        "flagged; %d Kostov-unvetted annotated",
+        "Catalog cross-match: %d Prsa, %d Kostov-vetted, %d Oddo, %d CALNet, "
+        "%d combined-vetted flagged; %d Kostov-unvetted annotated",
         int(out["flag_prsa_eb"].sum()),
         int(out["flag_kostov_eb"].sum()),
         int(out["flag_oddo_eb"].sum()),
+        int(out["flag_calnet_eb"].sum()),
         int(out["flag_catalog_eb"].sum()),
         int(out["annotation_kostov_candidate"].sum()),
     )

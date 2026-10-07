@@ -31,7 +31,7 @@ rule download_sector_xml:
         "python -m tess_megastructures.ingest.download "
         "--sector-run {wildcards.sector_run} "
         "--output-dir {PATHS[xml_dir]}/{wildcards.sector_run} "
-        "--max-concurrent {threads} 2> {log}"
+        "--max-concurrent {threads} --complete-marker {output.marker} 2> {log}"
 
 
 rule parse_sector:

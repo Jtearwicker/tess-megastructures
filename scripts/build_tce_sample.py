@@ -30,6 +30,7 @@ from pathlib import Path
 
 import yaml
 
+from tess_megastructures.catalogs.calnet2025 import load as load_calnet2025
 from tess_megastructures.catalogs.doyle2024 import load_doyle2024
 from tess_megastructures.catalogs.kostov2025 import (
     load as load_kostov2025_vetted,
@@ -71,7 +72,7 @@ def main() -> int:
     if not parsed_paths:
         logger.error(
             "No parsed sector Parquets found in %s (expected files like "
-            "tce_dv_metrics_*.parquet). Run the parser first.",
+            "tces_s*.parquet). Run the parser first.",
             processed_dir,
         )
         return 1
@@ -106,6 +107,7 @@ def main() -> int:
         "kostov2025_unvetted_catalog", load_kostov2025_unvetted, "Kostov+2025 unvetted"
     )
     oddo = _maybe_load("oddo2025_catalog", load_oddo2025, "Oddo+2025")
+    calnet = _maybe_load("calnet2025_catalog", load_calnet2025, "Shan+2025 CALNet")
 
     # --- build the TCE sample
     output_filename = sample_config.get("output", {}).get("filename", "tce_sample_v1.parquet")
@@ -121,6 +123,7 @@ def main() -> int:
         kostov_vetted=kostov_vetted,
         kostov_unvetted=kostov_unvetted,
         oddo=oddo,
+        calnet=calnet,
     )
 
     if df.empty:

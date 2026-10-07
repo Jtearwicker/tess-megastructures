@@ -105,7 +105,7 @@ def aggregate_parsed_sectors(parsed_paths: list[Path]) -> pd.DataFrame:
 
 def find_parsed_sectors(parsed_dir: Path) -> list[Path]:
     """Find per-sector parsed Parquet files in a directory."""
-    pattern = str(parsed_dir / "tce_dv_metrics_*.parquet")
+    pattern = str(parsed_dir / "tces_s*.parquet")
     return sorted(Path(p) for p in glob.glob(pattern))
 
 
@@ -287,6 +287,7 @@ def build_tce_sample(
     kostov_vetted: pd.DataFrame | None = None,
     kostov_unvetted: pd.DataFrame | None = None,
     oddo: pd.DataFrame | None = None,
+    calnet: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the v1 TCE sample from parsed sector Parquets.
 
@@ -338,6 +339,7 @@ def build_tce_sample(
         kostov_vetted=kostov_vetted,
         kostov_unvetted=kostov_unvetted,
         oddo=oddo,
+        calnet=calnet,
     )
 
     # any_diagnostic_flag gates over DV diagnostics + the combined vetted-EB

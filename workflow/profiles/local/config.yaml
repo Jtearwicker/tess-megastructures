@@ -14,6 +14,7 @@ default-resources:
 
 # Show useful run info.
 printshellcmds: true
-reason: true
-keep-going: false
+keep-going: true
 rerun-incomplete: true
+latency-wait: 30
+latency-wait: 30
