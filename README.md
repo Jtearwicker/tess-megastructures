@@ -69,6 +69,9 @@ The keys used by the pipeline:
 - `processed_data_dir` — where parsed per-sector Parquets are written
 - `output_dir` — where the built TCE sample and dashboard are written
 - `doyle2024_catalog` — path to the Doyle+24 main-sequence catalog file
+- `ctoi_catalog` — pinned ExoFOP CTOI CSV snapshot
+- `catalog_review_cache_dir` — cached TIC coordinates and VSX cross-match
+- `catalog_review_enrichment` — generated review-only CTOI/VSX table
 
 ### Run tests
 
@@ -115,7 +118,31 @@ Thresholds for the stellar cuts and diagnostic flags live in
 `configs/tce_sample_v1.yaml`. See
 [`docs/per_subsystem/B_annotate.md`](docs/per_subsystem/B_annotate.md).
 
-### 3. Inspect the result
+### 3. Build the catalog review enrichment
+
+Generate the optional catalog review layer from an existing TCE table. The
+first run queries MAST for TIC coordinates and CDS X-Match for VSX; subsequent
+runs can use the pinned cache:
+
+```bash
+uv run python scripts/build_catalog_review_enrichment.py \
+    --tces /path/to/tce_sample_v1.parquet \
+    --ctoi /path/to/exofop_ctois_YYYY-MM-DD.csv \
+    --toi /path/to/exofop_tois_YYYY-MM-DD.csv \
+    --cache-dir /path/to/catalog_review_cache \
+    --output /path/to/catalog_review_enrichment.parquet \
+    --queue-input /path/to/vetting_queue.csv \
+    --queue-output /path/to/vetting_queue_catalog_review.csv
+```
+
+Set that output as `catalog_review_enrichment` in `configs/paths.yaml`, then
+rerun `scripts/build_tce_sample.py`. Add `--reuse-cache` for a reproducible
+offline rebuild. The command writes a checksum-bearing metrics JSON beside the
+output. Large VSX queries are resumable and automatically split if CDS times
+out. Catalog routes prioritize human review only: they never enter
+`any_diagnostic_flag`, `in_clean_sample`, or an automatic veto.
+
+### 4. Inspect the result
 
 Generate a standalone HTML report (funnel, per-flag breakdown, distributions,
 flag co-occurrence, and the unflagged-survivor table):

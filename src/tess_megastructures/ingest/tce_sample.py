@@ -64,6 +64,7 @@ from tess_megastructures.annotate.diagnostics import (
     add_any_flag_column,
     add_diagnostic_flags,
 )
+from tess_megastructures.annotate.review_routing import add_catalog_review_routes
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,7 @@ def build_tce_sample(
     kostov_unvetted: pd.DataFrame | None = None,
     oddo: pd.DataFrame | None = None,
     calnet: pd.DataFrame | None = None,
+    catalog_review_enrichment: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the v1 TCE sample from parsed sector Parquets.
 
@@ -307,6 +309,9 @@ def build_tce_sample(
         Doyle+24 table for enrichment, already produced by
         ``catalogs.doyle2024.load_doyle2024`` (i.e. with ``doyle_``-prefixed
         columns). If None, no enrichment is applied.
+    catalog_review_enrichment : DataFrame, optional
+        Precomputed CTOI/VSX matches. These assign non-destructive review
+        routes only and never enter ``any_diagnostic_flag`` or sample cuts.
 
     Returns
     -------
@@ -347,6 +352,11 @@ def build_tce_sample(
     # for the dashboard only and intentionally NOT in the gating list.
     gating_flags = DIAGNOSTIC_FLAG_COLUMNS + [CATALOG_EB_FLAG]
     df = add_any_flag_column(df, flag_columns=gating_flags)
+
+    # CTOI/VSX information controls review priority only. These columns are
+    # intentionally added after gating is computed and are never included in
+    # DIAGNOSTIC_FLAG_COLUMNS or in_clean_sample.
+    df = add_catalog_review_routes(df, catalog_review_enrichment)
 
     df = apply_cuts(df, config)
 

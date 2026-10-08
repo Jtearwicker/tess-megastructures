@@ -212,6 +212,28 @@ Produced by `src/tess_megastructures/annotate/derived_metrics.py` and
 | `flag_low_rchisq` | bool | derived | `model_chi_square_reduced < reduced_chisq_min` |
 | `any_diagnostic_flag` | bool | derived | OR of all `flag_*` columns |
 
+### Catalog review enrichment and routes
+
+CTOI and VSX fields are review annotations, not diagnostic flags. Host or
+position matches are recorded separately from period matches; signal matches
+accept 1:2, 1:1, and 2:1 harmonics within the configured relative tolerance.
+
+| Column | Type | Definition |
+|---|---|---|
+| `toi_host_match` | bool | TIC occurs in the pinned TOI snapshot |
+| `toi_signal_match` | bool | TOI period matches the TCE period or supported harmonic |
+| `toi_ids`, `toi_dispositions` | string | Pipe-separated TOI context used to protect KP/CP/PC signals |
+| `ctoi_host_match` | bool | TIC occurs in the pinned CTOI snapshot |
+| `ctoi_signal_match` | bool | CTOI period matches the TCE period or supported harmonic |
+| `ctoi_ids`, `ctoi_dispositions` | string | Pipe-separated matching catalog context |
+| `vsx_position_match` | bool | VSX source lies within the positional radius |
+| `vsx_signal_match` | bool | VSX period matches the TCE period or supported harmonic |
+| `vsx_names`, `vsx_types` | string | Pipe-separated positional-match context |
+| `catalog_review_route` | string | Versioned queue assigned by planet-first precedence |
+| `catalog_route_reason` | string | Human-readable reason for the route |
+| `catalog_route_schema_version` | string | Routing-contract version |
+| `catalog_automatic_veto` | bool | Always False; invariant preventing catalog-only rejection |
+
 NaN policy: a flag fires only on positive evidence; missing data is never
 flagged. The catalog cross-match flag (`flag_catalog_binary`) is not yet
 implemented. See `docs/per_subsystem/B_annotate.md`.

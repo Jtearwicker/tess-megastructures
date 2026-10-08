@@ -30,6 +30,7 @@ from pathlib import Path
 
 import yaml
 
+from tess_megastructures.annotate.review_routing import load_catalog_review_enrichment
 from tess_megastructures.catalogs.calnet2025 import load as load_calnet2025
 from tess_megastructures.catalogs.doyle2024 import load_doyle2024
 from tess_megastructures.catalogs.kostov2025 import (
@@ -108,6 +109,11 @@ def main() -> int:
     )
     oddo = _maybe_load("oddo2025_catalog", load_oddo2025, "Oddo+2025")
     calnet = _maybe_load("calnet2025_catalog", load_calnet2025, "Shan+2025 CALNet")
+    catalog_review_enrichment = _maybe_load(
+        "catalog_review_enrichment",
+        load_catalog_review_enrichment,
+        "CTOI/VSX review enrichment",
+    )
 
     # --- build the TCE sample
     output_filename = sample_config.get("output", {}).get("filename", "tce_sample_v1.parquet")
@@ -124,6 +130,7 @@ def main() -> int:
         kostov_unvetted=kostov_unvetted,
         oddo=oddo,
         calnet=calnet,
+        catalog_review_enrichment=catalog_review_enrichment,
     )
 
     if df.empty:
