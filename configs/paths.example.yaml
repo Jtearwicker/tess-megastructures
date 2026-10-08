@@ -23,6 +23,13 @@ processed_data_dir: "/path/to/scratch/tess-megastructures/processed"
 
 # Literature catalogs (Prsa, Kostov, etc.). Small (~MB).
 literature_dir: "/path/to/scratch/tess-megastructures/literature"
+# Pinned ExoFOP CTOI snapshot used to build the review enrichment.
+ctoi_catalog: "/path/to/literature/exofop_ctois_YYYY-MM-DD.csv"
+# Cache for MAST TIC coordinates and the CDS/VizieR VSX positional match.
+catalog_review_cache_dir: "/path/to/scratch/tess-megastructures/catalog_review_cache"
+# Optional precomputed CTOI/VSX TCE enrichment (CSV or Parquet). This only
+# assigns review queues; it never changes diagnostic flags or survivor cuts.
+catalog_review_enrichment: "/path/to/literature/catalog_review_enrichment.csv"
 # Doyle+24 reference catalogue (Vizier J/MNRAS/529/1802), fixed-width .dat.gz.
 # Downloaded once and stored durably. ~293 MB gzipped.
 # (On the compute node this lives under the shared exoplanet store.)
