@@ -220,6 +220,9 @@ accept 1:2, 1:1, and 2:1 harmonics within the configured relative tolerance.
 
 | Column | Type | Definition |
 |---|---|---|
+| `toi_host_match` | bool | TIC occurs in the pinned TOI snapshot |
+| `toi_signal_match` | bool | TOI period matches the TCE period or supported harmonic |
+| `toi_ids`, `toi_dispositions` | string | Pipe-separated TOI context used to protect KP/CP/PC signals |
 | `ctoi_host_match` | bool | TIC occurs in the pinned CTOI snapshot |
 | `ctoi_signal_match` | bool | CTOI period matches the TCE period or supported harmonic |
 | `ctoi_ids`, `ctoi_dispositions` | string | Pipe-separated matching catalog context |

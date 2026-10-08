@@ -9,6 +9,12 @@ from collections.abc import Iterable
 import pandas as pd
 
 ENRICHMENT_COLUMNS = [
+    "toi_host_match",
+    "toi_signal_match",
+    "toi_ids",
+    "toi_dispositions",
+    "toi_period_ratios",
+    "toi_min_period_relative_error",
     "ctoi_host_match",
     "ctoi_signal_match",
     "ctoi_ids",
@@ -73,6 +79,7 @@ def build_catalog_review_enrichment(
     ctoi: pd.DataFrame,
     vsx_matches: pd.DataFrame,
     *,
+    toi: pd.DataFrame | None = None,
     period_column: str | None = None,
     period_tolerance: float = 0.01,
 ) -> pd.DataFrame:
@@ -102,6 +109,13 @@ def build_catalog_review_enrichment(
         if tic:
             ctoi_by_tic[_tic_key(tic)].append(item)
 
+    toi_by_tic: dict[str, list[dict]] = defaultdict(list)
+    if toi is not None:
+        for item in toi.to_dict("records"):
+            tic = _first_present(item, ("TIC ID", "tic_id", "TIC", "ticId"))
+            if tic:
+                toi_by_tic[_tic_key(tic)].append(item)
+
     vsx_by_tic: dict[str, list[dict]] = defaultdict(list)
     for item in vsx_matches.to_dict("records"):
         tic = _first_present(item, ("tic_id", "TIC_ID", "TIC", "ticId"))
@@ -113,6 +127,22 @@ def build_catalog_review_enrichment(
         row = dict(source)
         tic = _tic_key(source["tic_id"])
         tce_period = source.get(period_column)
+
+        toi_rows = toi_by_tic.get(tic, [])
+        toi_ephemeris: list[dict] = []
+        toi_ratios: list[str] = []
+        toi_errors: list[float] = []
+        for item in toi_rows:
+            matched, ratio, error = harmonic_match(
+                tce_period,
+                _first_present(item, ("Period (days)", "period", "Period")),
+                period_tolerance,
+            )
+            if matched:
+                toi_ephemeris.append(item)
+                toi_ratios.append(ratio)
+                if error is not None:
+                    toi_errors.append(error)
 
         ctoi_rows = ctoi_by_tic.get(tic, [])
         ctoi_ephemeris: list[dict] = []
@@ -158,6 +188,17 @@ def build_catalog_review_enrichment(
 
         row.update(
             {
+                "toi_host_match": bool(toi_rows),
+                "toi_signal_match": bool(toi_ephemeris),
+                "toi_ids": _join_values(
+                    _first_present(item, ("TOI", "toi", "toi_id")) for item in toi_rows
+                ),
+                "toi_dispositions": _join_values(
+                    _first_present(item, ("TFOPWG Disposition", "TESS Disposition"))
+                    for item in toi_rows
+                ),
+                "toi_period_ratios": _join_values(toi_ratios),
+                "toi_min_period_relative_error": min(toi_errors) if toi_errors else pd.NA,
                 "ctoi_host_match": bool(ctoi_rows),
                 "ctoi_signal_match": bool(ctoi_ephemeris),
                 "ctoi_ids": _join_values(
@@ -180,7 +221,7 @@ def build_catalog_review_enrichment(
                 "vsx_period_ratios": _join_values(vsx_ratios),
                 "vsx_min_period_relative_error": min(vsx_errors) if vsx_errors else pd.NA,
                 "vsx_min_distance_arcsec": min(distances) if distances else pd.NA,
-                "catalog_review_flag": bool(ctoi_rows or vsx_rows),
+                "catalog_review_flag": bool(toi_rows or ctoi_rows or vsx_rows),
             }
         )
         rows.append(row)

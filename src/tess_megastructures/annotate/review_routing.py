@@ -22,6 +22,9 @@ CATALOG_ROUTE_COLUMNS = [
 
 _ENRICHMENT_COLUMNS = [
     "label",
+    "toi_host_match",
+    "toi_signal_match",
+    "toi_dispositions",
     "ctoi_host_match",
     "ctoi_signal_match",
     "ctoi_dispositions",
@@ -57,19 +60,30 @@ def _values(value: object) -> set[str]:
 
 
 def _route(row: pd.Series) -> tuple[str, str]:
+    toi_dispositions = _values(row.get("toi_dispositions"))
     dispositions = _values(row.get("ctoi_dispositions"))
     vsx_types = _values(row.get("vsx_types"))
     if str(row.get("label", "")).strip().lower() == "planet":
         return "protect_confirmed_planet", "existing confirmed-planet control"
-    if _truth(row.get("ctoi_signal_match")) and dispositions & {"CP", "PC", "APC"}:
-        return "protect_planet_candidate", "CTOI ephemeris match with CP/PC/APC disposition"
-    if _truth(row.get("ctoi_signal_match")) and "FP" in dispositions:
-        return "review_known_toi_fp", "CTOI ephemeris match with FP disposition"
+    if _truth(row.get("toi_signal_match")) and "KP" in toi_dispositions:
+        return "protect_confirmed_planet", "TOI ephemeris match with KP disposition"
+    if (_truth(row.get("toi_signal_match")) and toi_dispositions & {"CP", "PC", "APC"}) or (
+        _truth(row.get("ctoi_signal_match")) and dispositions & {"CP", "PC", "APC"}
+    ):
+        return "protect_planet_candidate", "TOI/CTOI ephemeris match with CP/PC/APC disposition"
+    if (_truth(row.get("toi_signal_match")) and "FP" in toi_dispositions) or (
+        _truth(row.get("ctoi_signal_match")) and "FP" in dispositions
+    ):
+        return "review_known_toi_fp", "TOI/CTOI ephemeris match with FP disposition"
     if _truth(row.get("vsx_signal_match")) and vsx_types & _EB_TYPES:
         return "review_catalog_eb", "VSX ephemeris match with EB-like variable type"
     if _truth(row.get("vsx_signal_match")):
         return "review_period_matched_variable", "VSX ephemeris match with non-EB variable type"
-    if _truth(row.get("ctoi_host_match")) or _truth(row.get("vsx_position_match")):
+    if (
+        _truth(row.get("toi_host_match"))
+        or _truth(row.get("ctoi_host_match"))
+        or _truth(row.get("vsx_position_match"))
+    ):
         return "review_catalog_context", "catalog host/position match without TCE-period match"
     return "standard_review", "no CTOI or VSX match"
 
@@ -115,3 +129,28 @@ def add_catalog_review_routes(
     # Contract invariant: review annotations never veto a TCE automatically.
     out["catalog_automatic_veto"] = False
     return out
+
+
+def attach_catalog_review_to_queue(queue: pd.DataFrame, routed_tces: pd.DataFrame) -> pd.DataFrame:
+    """Attach review fields to an existing vetting queue without changing rows."""
+    keys = [
+        key
+        for key in ("tic_id", "planet_number", "sector", "orbital_period_days")
+        if key in queue.columns and key in routed_tces.columns
+    ]
+    if "tic_id" not in keys:
+        raise KeyError("vetting queue and routed table require 'tic_id'")
+    if routed_tces.duplicated(keys).any():
+        raise ValueError(f"routed table has duplicate rows for queue key {keys}")
+    review_columns = [
+        column
+        for column in [*_ENRICHMENT_COLUMNS, *CATALOG_ROUTE_COLUMNS]
+        if column in routed_tces.columns and column not in keys
+    ]
+    overlap = [column for column in review_columns if column in queue.columns]
+    return queue.drop(columns=overlap).merge(
+        routed_tces[[*keys, *review_columns]],
+        how="left",
+        on=keys,
+        validate="one_to_one",
+    )

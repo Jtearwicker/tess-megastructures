@@ -171,7 +171,9 @@ def _layer1_eb_mask(df: pd.DataFrame) -> pd.Series:
     if LAYER1_FLAG_COL in df.columns:
         return df[LAYER1_FLAG_COL].fillna(False).astype(bool)
     if LAYER1_WSEC_COL in df.columns:
-        return (pd.to_numeric(df[LAYER1_WSEC_COL], errors="coerce") >= LAYER1_WSEC_THRESHOLD).fillna(False)
+        return (
+            pd.to_numeric(df[LAYER1_WSEC_COL], errors="coerce") >= LAYER1_WSEC_THRESHOLD
+        ).fillna(False)
     return pd.Series(False, index=df.index)
 
 
@@ -313,6 +315,17 @@ SURVIVOR_COLUMNS = [
     "model_fit_snr",
     "weak_secondary_robust_statistic",
     "toi_id",
+    "catalog_review_route",
+    "catalog_route_reason",
+    "toi_ids",
+    "toi_dispositions",
+    "toi_signal_match",
+    "ctoi_ids",
+    "ctoi_dispositions",
+    "ctoi_signal_match",
+    "vsx_names",
+    "vsx_types",
+    "vsx_signal_match",
 ]
 
 
@@ -533,7 +546,12 @@ def _cooccurrence_table(df: pd.DataFrame, flag_cols: list[str]) -> str:
     row flag's own total (diagonal).</p>"""
 
 
-def _survivor_table(df: pd.DataFrame, scores: pd.DataFrame | None = None, top_n: int = 10000, dv_links: pd.DataFrame | None = None) -> str:
+def _survivor_table(
+    df: pd.DataFrame,
+    scores: pd.DataFrame | None = None,
+    top_n: int = 10000,
+    dv_links: pd.DataFrame | None = None,
+) -> str:
     import json as _json
 
     # The caller passes the already-prepared rows (working set = catalogued EBs
@@ -588,16 +606,28 @@ def _survivor_table(df: pd.DataFrame, scores: pd.DataFrame | None = None, top_n:
     # lookup of the real DV product per target). Left-join a per-row dv_url so the
     # client renders a real link instead of constructing a filename (the old path
     # guessed an HLSP tess-spoc name, wrong collection for 2-min SPOC TCEs).
-    if dv_links is not None and not dv_links.empty and {"dv_key", "dv_url"}.issubset(dv_links.columns):
+    if (
+        dv_links is not None
+        and not dv_links.empty
+        and {"dv_key", "dv_url"}.issubset(dv_links.columns)
+    ):
+
         def _dvk(r):
-            if pd.isna(r.get("tic_id")) or pd.isna(r.get("planet_number")) or pd.isna(r.get("sector")):
+            if (
+                pd.isna(r.get("tic_id"))
+                or pd.isna(r.get("planet_number"))
+                or pd.isna(r.get("sector"))
+            ):
                 return None
             return f"{int(r['tic_id'])}-{int(r['planet_number'])}-{int(r['sector'])}"
+
         unflagged = unflagged.drop(columns=[c for c in ("dv_url",) if c in unflagged.columns])
         unflagged["__dvk"] = unflagged.apply(_dvk, axis=1)
         unflagged = unflagged.merge(
             dv_links[["dv_key", "dv_url"]].drop_duplicates("dv_key"),
-            left_on="__dvk", right_on="dv_key", how="left",
+            left_on="__dvk",
+            right_on="dv_key",
+            how="left",
         ).drop(columns=["__dvk", "dv_key"])
 
     n_total = len(unflagged)
@@ -605,7 +635,11 @@ def _survivor_table(df: pd.DataFrame, scores: pd.DataFrame | None = None, top_n:
     # Columns shown in the table (curated), then ExoMiner cols, then annotation.
     # anomaly_score leads (it's the ranking); n_sectors surfaces multi-sector
     # signals produced by grouping.
-    lead_cols = [c for c in ["anomaly_score", "eb_likelihood", "n_sectors", "layer1_hidden"] if c in unflagged.columns]
+    lead_cols = [
+        c
+        for c in ["anomaly_score", "eb_likelihood", "n_sectors", "layer1_hidden"]
+        if c in unflagged.columns
+    ]
     display_cols = lead_cols + [
         c for c in SURVIVOR_COLUMNS if c in unflagged.columns and c not in lead_cols
     ]
@@ -672,7 +706,7 @@ def _survivor_table(df: pd.DataFrame, scores: pd.DataFrame | None = None, top_n:
     # exact-match dropdowns. Note: for grouped signals the per-signal sector
     # filter is handled by the dedicated multi-sector SECTOR SELECTOR (which
     # filters on sectors_list with any-overlap), not this single-select dropdown.
-    select_cols = [c for c in ["planet_number"] if c in unflagged.columns]
+    select_cols = [c for c in ["planet_number", "catalog_review_route"] if c in unflagged.columns]
     if "sector" in unflagged.columns and "sectors_list" not in unflagged.columns:
         # per-TCE table (no grouping): fall back to single sector dropdown
         select_cols.append("sector")
@@ -730,7 +764,9 @@ def _survivor_table(df: pd.DataFrame, scores: pd.DataFrame | None = None, top_n:
         "selectCols": select_cols,
         "hasAnnot": has_annot,
         "sectorUniverse": sector_universe,
-        "sectorsListCol": "sectors_list" if has_sectors_list else ("sector" if "sector" in unflagged.columns else None),
+        "sectorsListCol": "sectors_list"
+        if has_sectors_list
+        else ("sector" if "sector" in unflagged.columns else None),
     }
     # distinct values for select dropdowns
     selopts = {c: sorted({_clean(v) for v in unflagged[c].dropna().tolist()}) for c in select_cols}
@@ -763,8 +799,8 @@ def _survivor_table(df: pd.DataFrame, scores: pd.DataFrame | None = None, top_n:
     <div class="survscroll">
       <table class="survivors" id="survivors"><thead id="survHead"></thead><tbody id="survBody"></tbody></table>
     </div>
-    <p class="note">Showing {n_total:,}{' of ' + format(n_full, ',') if capped else ''} signals,
-    ranked by anomaly score.{' Top ' + format(top_n, ',') + ' by anomaly score; full catalog in the parquet.' if capped else ''}
+    <p class="note">Showing {n_total:,}{" of " + format(n_full, ",") if capped else ""} signals,
+    ranked by anomaly score.{" Top " + format(top_n, ",") + " by anomaly score; full catalog in the parquet." if capped else ""}
     Working set (catalogued EBs removed); layer-1 secondary-eclipse EBs are hidden here
     or marked in the full view. Use the flag toggles and eb_likelihood to narrow.{note_exo}{note_annot}</p>
     <script id="survData" type="application/json">{data_json}</script>
@@ -840,10 +876,16 @@ def _pipeline_svg() -> str:
         ("Anomaly candidates", "for expert review", "green", False),
     ]
     col = {"cyan": "#61d8e4", "coral": "#f2745f", "violet": "#9aa2ff", "green": "#60d39f"}
-    fill = {"cyan": "#1d211a", "coral": "rgba(242,116,95,0.10)", "violet": "#1d211a",
-            "green": "rgba(96,211,159,0.10)"}
+    fill = {
+        "cyan": "#1d211a",
+        "coral": "rgba(242,116,95,0.10)",
+        "violet": "#1d211a",
+        "green": "rgba(96,211,159,0.10)",
+    }
     w, h, gap, x0, y0 = 190, 128, 44, 40, 72
-    parts = ['<text x="40" y="44" font-size="22" font-weight="800" fill="#f4f0e6">MegaMiner pipeline</text>']
+    parts = [
+        '<text x="40" y="44" font-size="22" font-weight="800" fill="#f4f0e6">MegaMiner pipeline</text>'
+    ]
     for i, (title, sub, tone, dashed) in enumerate(steps):
         x = x0 + i * (w + gap)
         c = col[tone]
@@ -867,9 +909,13 @@ def _pipeline_svg() -> str:
                 f'stroke-linecap="round" stroke-linejoin="round"/>'
             )
     vw = x0 * 2 + len(steps) * w + (len(steps) - 1) * gap
-    return (f'<div class="pipeline"><svg viewBox="0 0 {vw} {y0 + h + 30}" role="img" '
-            f'aria-label="MegaMiner pipeline: ' + ", then ".join(t for t, *_ in steps) + '" '
-            f'font-family="Inter, ui-sans-serif, system-ui, sans-serif">' + "".join(parts) + "</svg></div>")
+    return (
+        f'<div class="pipeline"><svg viewBox="0 0 {vw} {y0 + h + 30}" role="img" '
+        f'aria-label="MegaMiner pipeline: ' + ", then ".join(t for t, *_ in steps) + '" '
+        f'font-family="Inter, ui-sans-serif, system-ui, sans-serif">'
+        + "".join(parts)
+        + "</svg></div>"
+    )
 
 
 def _request_access_panel(n_survivors: int, sector_range: str) -> str:
@@ -1181,19 +1227,19 @@ def build_report(
     df_all = df
     n_orig = len(df_all)
     n_catalog_cut = int(_catalog_eb_mask(df_all).sum())
-    df = _working_set(df_all)      # everything below operates on the working set
-    df = _add_eb_likelihood(df)    # down-rank annotation (never cuts)
+    df = _working_set(df_all)  # everything below operates on the working set
+    df = _add_eb_likelihood(df)  # down-rank annotation (never cuts)
     # 2) LAYER-1 hide: a positive secondary-eclipse detection (reversible, audited).
     layer1 = _layer1_eb_mask(df)
     n_layer1 = int(layer1.sum())
     if mark_only:
         df = df.copy()
         df["layer1_hidden"] = layer1.to_numpy()
-        table_df = df             # full view: keep all working-set rows, marked
+        table_df = df  # full view: keep all working-set rows, marked
     else:
         table_df = df.loc[~layer1].copy()  # private/public: apply the hide
-    n_total = len(df)             # working-set size (summary/stat base)
-    n_visible = len(table_df)     # rows actually shown outward
+    n_total = len(df)  # working-set size (summary/stat base)
+    n_visible = len(table_df)  # rows actually shown outward
     n_outward = n_total - n_layer1
 
     present_diag = [c for c in DIAGNOSTIC_FLAG_COLUMNS if c in df.columns]
@@ -1220,7 +1266,9 @@ def build_report(
     summary += _bar("Working set (ranked by anomaly score)", n_total, n_orig, "#61d8e4")
     summary += _bar(
         "Layer-1 EB hide (secondary eclipse \u2265 %g)" % LAYER1_WSEC_THRESHOLD,
-        n_layer1, n_orig, "#e9c85c",
+        n_layer1,
+        n_orig,
+        "#e9c85c",
     )
     summary += _bar("Outward-facing set (working \u2212 layer-1)", n_outward, n_orig, "#60d39f")
     if "in_clean_sample" in df:
@@ -1257,8 +1305,12 @@ def build_report(
         _bar(_diag_label(c, diag), _bool_count(df_all, c), n_orig, "#f2745f", label_is_html=True)
         for c in present_diag
     )
-    diag_bars += _bar(SECONDARY_LABEL % LAYER1_WSEC_THRESHOLD, int(df_flags[SECONDARY_FLAG_COL].sum()),
-                      n_orig, "#f2745f")
+    diag_bars += _bar(
+        SECONDARY_LABEL % LAYER1_WSEC_THRESHOLD,
+        int(df_flags[SECONDARY_FLAG_COL].sum()),
+        n_orig,
+        "#f2745f",
+    )
 
     # ---- Catalog flags (own section, three titled bars) ----
     def _cat_title(c: str) -> str:
@@ -1288,6 +1340,28 @@ def build_report(
         if "annotation_kostov_candidate" in df
         else ""
     )
+
+    # Review-only catalog routes are collaborator-facing. Do not render their
+    # counts, labels, or row-level fields in the public artifact.
+    review_route_section = ""
+    if not is_public and "catalog_review_route" in df_all.columns:
+        route_counts = df_all["catalog_review_route"].fillna("standard_review").value_counts()
+        route_bars = "".join(
+            _bar(
+                str(route).replace("_", " ").title(),
+                int(count),
+                n_orig,
+                "#e9c85c",
+            )
+            for route, count in route_counts.sort_index().items()
+        )
+        review_route_section = f"""
+<h2>Catalog review routes</h2>
+<p class="secsub">Private review prioritization from CTOI and VSX. Position-only
+matches retain their variable type even when VSX has no period. These routes do
+not change survivor eligibility and never trigger an automatic veto.</p>
+{route_bars}
+"""
 
     # ---- distributions ----
     hists = ""
@@ -1351,8 +1425,11 @@ def build_report(
     if is_public:
         updated = f" Last updated: {html.escape(last_updated)}" if last_updated else ""
         sub_line = f"Sectors processed: {html.escape(sector_range)}.{updated}"
-        tce_box = (f'<div class="stat"><div class="big">{n_tces:,}</div><div class="lbl">total TCEs</div></div>'
-                   if n_tces else "")
+        tce_box = (
+            f'<div class="stat"><div class="big">{n_tces:,}</div><div class="lbl">total TCEs</div></div>'
+            if n_tces
+            else ""
+        )
         stats_html = f"""<div class="stats">
   {tce_box}
   <div class="stat"><div class="big">{n_orig:,}</div><div class="lbl">unique signals</div></div>
@@ -1504,6 +1581,7 @@ def build_report(
 <p class="secsub">Vetted eclipsing-binary catalogs (True = known EB). Vetted membership gates; unvetted is annotation only.</p>
 {cat_bars or "<p class='empty'>No catalog-flag columns.</p>"}
 {cat_annot_bar}
+{review_route_section}
 
 <h2>Distributions</h2>
 <div class="hists">{hists or "<p class='empty'>No distribution columns.</p>"}</div>
@@ -1627,13 +1705,26 @@ def main(argv: list[str]) -> int:
         n_tces = pq.read_metadata(args.tce_table).num_rows
         if not thresholds:
             thresholds = _read_thresholds(args.tce_table)
-        print(f"TCE table {args.tce_table.name}: {n_tces:,} TCEs; "
-              f"thresholds {'found' if thresholds else 'not found'}")
-    last_updated = args.last_updated or dt.date.fromtimestamp(args.input.stat().st_mtime).isoformat()
+        print(
+            f"TCE table {args.tce_table.name}: {n_tces:,} TCEs; "
+            f"thresholds {'found' if thresholds else 'not found'}"
+        )
+    last_updated = (
+        args.last_updated or dt.date.fromtimestamp(args.input.stat().st_mtime).isoformat()
+    )
     out = args.output or args.input.with_name(args.input.stem + f"_dashboard_{args.view}.html")
     out.write_text(
-        build_report(df, args.input.name, thresholds, scores, view=args.view, top_n=args.top_n, dv_links=dv_links,
-                     n_tces=n_tces, last_updated=last_updated),
+        build_report(
+            df,
+            args.input.name,
+            thresholds,
+            scores,
+            view=args.view,
+            top_n=args.top_n,
+            dv_links=dv_links,
+            n_tces=n_tces,
+            last_updated=last_updated,
+        ),
         encoding="utf-8",
     )
     n_scored = f", {len(scores):,} scored" if scores is not None else ""

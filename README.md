@@ -128,14 +128,18 @@ runs can use the pinned cache:
 uv run python scripts/build_catalog_review_enrichment.py \
     --tces /path/to/tce_sample_v1.parquet \
     --ctoi /path/to/exofop_ctois_YYYY-MM-DD.csv \
+    --toi /path/to/exofop_tois_YYYY-MM-DD.csv \
     --cache-dir /path/to/catalog_review_cache \
-    --output /path/to/catalog_review_enrichment.parquet
+    --output /path/to/catalog_review_enrichment.parquet \
+    --queue-input /path/to/vetting_queue.csv \
+    --queue-output /path/to/vetting_queue_catalog_review.csv
 ```
 
 Set that output as `catalog_review_enrichment` in `configs/paths.yaml`, then
 rerun `scripts/build_tce_sample.py`. Add `--reuse-cache` for a reproducible
 offline rebuild. The command writes a checksum-bearing metrics JSON beside the
-output. Catalog routes prioritize human review only: they never enter
+output. Large VSX queries are resumable and automatically split if CDS times
+out. Catalog routes prioritize human review only: they never enter
 `any_diagnostic_flag`, `in_clean_sample`, or an automatic veto.
 
 ### 4. Inspect the result

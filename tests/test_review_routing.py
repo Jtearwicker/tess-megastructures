@@ -5,7 +5,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from tess_megastructures.annotate.review_routing import add_catalog_review_routes
+from tess_megastructures.annotate.review_routing import (
+    add_catalog_review_routes,
+    attach_catalog_review_to_queue,
+)
 
 
 def _sample() -> pd.DataFrame:
@@ -98,7 +101,33 @@ def test_existing_label_is_preserved_when_enrichment_omits_it():
     assert out.loc[0, "catalog_review_route"] == "protect_confirmed_planet"
 
 
+def test_toi_kp_ephemeris_protects_confirmed_planet():
+    sample = _sample().iloc[:1]
+    enrichment = pd.DataFrame(
+        {
+            "tic_id": [1],
+            "planet_number": [1],
+            "sector": [42],
+            "toi_signal_match": [True],
+            "toi_dispositions": ["KP"],
+        }
+    )
+    out = add_catalog_review_routes(sample, enrichment)
+    assert out.loc[0, "catalog_review_route"] == "protect_confirmed_planet"
+
+
 def test_duplicate_tce_keys_are_rejected():
     duplicate = pd.DataFrame({"tic_id": [1, 1], "planet_number": [1, 1], "sector": [42, 42]})
     with pytest.raises(ValueError, match="duplicate rows"):
         add_catalog_review_routes(_sample(), duplicate)
+
+
+def test_attach_review_to_queue_preserves_membership_and_order():
+    routed = add_catalog_review_routes(_sample(), None).assign(
+        orbital_period_days=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    )
+    queue = routed.iloc[[2, 0]][["tic_id", "planet_number", "sector", "orbital_period_days"]].copy()
+    out = attach_catalog_review_to_queue(queue, routed)
+    assert out["tic_id"].tolist() == [3, 1]
+    assert len(out) == len(queue)
+    assert set(out["catalog_review_route"]) == {"standard_review"}

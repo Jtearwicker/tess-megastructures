@@ -49,6 +49,21 @@ def test_enrichment_distinguishes_host_position_and_signal_matches():
     assert out.loc[1, "vsx_min_distance_arcsec"] == pytest.approx(1.2)
 
 
+def test_toi_ephemeris_and_disposition_are_retained():
+    tces = pd.DataFrame({"tic_id": [10], "orbital_period_days": [4.0]})
+    toi = pd.DataFrame(
+        {
+            "TIC ID": [10],
+            "TOI": ["100.01"],
+            "Period (days)": [4.0],
+            "TFOPWG Disposition": ["KP"],
+        }
+    )
+    out = build_catalog_review_enrichment(tces, pd.DataFrame(), pd.DataFrame(), toi=toi)
+    assert bool(out.loc[0, "toi_signal_match"])
+    assert out.loc[0, "toi_dispositions"] == "KP"
+
+
 def test_requires_period_column():
     with pytest.raises(KeyError, match="orbital-period"):
         build_catalog_review_enrichment(
