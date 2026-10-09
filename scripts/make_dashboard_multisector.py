@@ -1164,6 +1164,7 @@ def build_report(
     dv_links: pd.DataFrame | None = None,
     n_tces: int | None = None,
     last_updated: str | None = None,
+    survivors_only: bool = False,
 ) -> str:
     # view controls survivor-data exposure:
     #   "full"/"private" -> survivor table + its embedded JSON are included
@@ -1198,6 +1199,16 @@ def build_report(
 
     present_diag = [c for c in DIAGNOSTIC_FLAG_COLUMNS if c in df.columns]
     present_cat = [c for c in CATALOG_FLAG_ORDER if c in df_all.columns]
+    if survivors_only and not is_public:
+        # Unflagged survivors only: keep rows with no diagnostic flag. Catalogued EBs (hard
+        # cut) are already out of the working set; layer-1 EBs are out of table_df except
+        # in the full view, where they are only marked, so drop them here too.
+        if mark_only:
+            table_df = table_df.loc[~layer1.to_numpy()]
+        if present_diag:
+            flagged = table_df[present_diag].fillna(False).astype(bool).any(axis=1)
+            table_df = table_df.loc[~flagged]
+        table_df = table_df.copy()
     present_cuts = [c for c in CUT_ORDER if c in df.columns]
 
     n_clean = _bool_count(df, "in_clean_sample") if "in_clean_sample" in df else 0
@@ -1319,7 +1330,10 @@ def build_report(
     else:
         survivors = _survivor_table(table_df, scores, top_n=top_n, dv_links=dv_links)
         survivor_heading = (
-            "Working set, ranked by anomaly score (layer-1 EBs marked, not hidden)"
+            f"Unflagged survivors ({len(table_df):,}), ranked by anomaly score: no diagnostic "
+            "flags, no catalogued EB, no secondary eclipse"
+            if survivors_only
+            else "Working set, ranked by anomaly score (layer-1 EBs marked, not hidden)"
             if mark_only
             else "Candidate signals, ranked by anomaly score (layer-1 EBs hidden)"
         )
@@ -1578,6 +1592,15 @@ def main(argv: list[str]) -> int:
         help="Date shown as 'Last updated' in the public view (default: the input file's date).",
     )
     ap.add_argument(
+        "--survivors-only",
+        action="store_true",
+        help=(
+            "Private/full only: limit the table to the unflagged survivors (no diagnostic "
+            "flag, no catalogued EB, no secondary eclipse) and embed all of them. Summary "
+            "sections are unchanged. Default output name ends in _dashboard_survivors.html."
+        ),
+    )
+    ap.add_argument(
         "--clean-csv",
         type=Path,
         default=None,
@@ -1588,6 +1611,11 @@ def main(argv: list[str]) -> int:
         ),
     )
     args = ap.parse_args(argv)
+    if args.survivors_only:
+        if args.view == "public":
+            print("ERROR: --survivors-only puts survivor data in the file; use --view private or full.")
+            return 1
+        args.top_n = 0  # embed every survivor
     if not args.input.is_file():
         print(f"ERROR: input not found: {args.input}")
         return 1
@@ -1630,10 +1658,11 @@ def main(argv: list[str]) -> int:
         print(f"TCE table {args.tce_table.name}: {n_tces:,} TCEs; "
               f"thresholds {'found' if thresholds else 'not found'}")
     last_updated = args.last_updated or dt.date.fromtimestamp(args.input.stat().st_mtime).isoformat()
-    out = args.output or args.input.with_name(args.input.stem + f"_dashboard_{args.view}.html")
+    suffix = "survivors" if args.survivors_only else args.view
+    out = args.output or args.input.with_name(args.input.stem + f"_dashboard_{suffix}.html")
     out.write_text(
         build_report(df, args.input.name, thresholds, scores, view=args.view, top_n=args.top_n, dv_links=dv_links,
-                     n_tces=n_tces, last_updated=last_updated),
+                     n_tces=n_tces, last_updated=last_updated, survivors_only=args.survivors_only),
         encoding="utf-8",
     )
     n_scored = f", {len(scores):,} scored" if scores is not None else ""
